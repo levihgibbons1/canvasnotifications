@@ -62,15 +62,24 @@ Copy `.env.example` to `.env`:
 
 ## Deploying
 
-Dispatch is a long-running server: it polls Canvas on a timer, evaluates reminders every minute, and keeps state in a SQLite file. That fits a host that runs a persistent Node process with a disk, such as Railway, Render, Fly.io, or a small VPS:
+Dispatch is a long-running server: it polls Canvas on a timer, evaluates reminders every minute, and keeps state in a SQLite file. That needs a host that runs a persistent Node process, not a serverless one — **Vercel does not fit** (see note below). Render's free tier does, and one service hosts both the API and the built frontend.
 
-```bash
-npm install && npm run build && npm start
-```
+**Deploy to Render (free):**
 
-Set `SERVER_URL` and `APP_URL` to the public URL, `SESSION_SECRET` to a long random string, and `DB_PATH` to a persistent volume.
+1. Push this repo to GitHub (already done if you're reading this from there).
+2. On [render.com](https://render.com), **New → Web Service**, connect the repo.
+3. Build Command: `npm install && npm run build`
+   Start Command: `npm start`
+   Instance Type: Free
+4. Environment variables:
+   - `SESSION_SECRET` — any long random string
+   - `SERVER_URL` and `APP_URL` — the `https://your-app.onrender.com` URL Render assigns (set these on a second deploy once you know the URL)
+   - Optionally `SMTP_*` / `TWILIO_*` for real email/SMS (see below)
+5. Deploy. First build takes a few minutes.
 
-**Vercel note.** Vercel runs serverless functions with no background timers and no writable disk, so the current server cannot run there unchanged. To target Vercel, the sync and reminder loops would move to Vercel Cron hitting `/api/cron/*` routes, SQLite would move to a hosted database such as Vercel Postgres or Turso, and the Express app would be wrapped as a serverless function. The client build in `client/dist` deploys to Vercel as-is.
+Two tradeoffs on the free tier: the service sleeps after 15 minutes idle (next request takes 30–50s to wake it), and there's no persistent disk, so the SQLite file — settings, notification history, and your Canvas connection — resets on every redeploy or restart. For real persistence, Fly.io's free allowance includes a small persistent volume but requires a card on file (no charge within the free quota).
+
+**Vercel note.** Vercel runs serverless functions: no background process between requests, free-tier cron limited to once a day, and no writable disk shared across requests. Dispatch's 5-minute sync, 1-minute reminder checks, and SQLite file all depend on exactly what serverless doesn't provide. Making it fit would mean moving sync/reminders to Vercel Cron (per-minute schedules need the paid Pro plan) and replacing SQLite with a hosted database like Turso or Postgres — a real rewrite, not a deploy setting. Vercel remains a good fit if you only want to host the static `client/dist` build with the API elsewhere, though that split needs CORS and cross-site cookie support added to the server first.
 
 ## Prototype limits
 
