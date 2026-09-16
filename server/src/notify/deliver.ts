@@ -138,21 +138,21 @@ function parseFrom(raw: string): { name?: string; email: string } {
 
 let transporter: Transporter | null = null;
 async function sendEmail(d: DeliveryRow): Promise<'sent' | 'simulated'> {
-  // Prefer SendGrid's HTTP API: it works on hosts that block outbound SMTP ports
+  // Prefer Brevo's HTTP API: it works on hosts that block outbound SMTP ports
   // (e.g. Render's free tier). Nodemailer/SMTP stays as a fallback for hosts that don't.
-  if (config.sendgrid.enabled) {
-    const from = parseFrom(config.sendgrid.from);
-    const res = await fetch('https://api.sendgrid.com/v3/mail/send', {
+  if (config.brevo.enabled) {
+    const sender = parseFrom(config.brevo.from);
+    const res = await fetch('https://api.brevo.com/v3/smtp/email', {
       method: 'POST',
-      headers: { Authorization: `Bearer ${config.sendgrid.apiKey}`, 'Content-Type': 'application/json' },
+      headers: { 'api-key': config.brevo.apiKey, 'Content-Type': 'application/json', Accept: 'application/json' },
       body: JSON.stringify({
-        personalizations: [{ to: [{ email: d.address }] }],
-        from,
+        sender: { email: sender.email, name: sender.name },
+        to: [{ email: d.address }],
         subject: d.subject,
-        content: [{ type: 'text/plain', value: d.body }],
+        textContent: d.body,
       }),
     });
-    if (!res.ok) throw new Error(`SendGrid ${res.status}: ${(await res.text()).slice(0, 300)}`);
+    if (!res.ok) throw new Error(`Brevo ${res.status}: ${(await res.text()).slice(0, 300)}`);
     return 'sent';
   }
   if (!config.smtp.enabled) return 'simulated';

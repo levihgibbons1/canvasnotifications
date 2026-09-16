@@ -25,9 +25,9 @@ services:
       - key: CANVAS_CLIENT_SECRET
         sync: false
       # Real email delivery (optional) — unset means email lands in the in-app Outbox.
-      # SendGrid (HTTP API) takes priority over SMTP if both are set — use it on this
-      # free plan, since Render blocks outbound SMTP ports 25/465/587 here.
-      - key: SENDGRID_API_KEY
+      # Brevo (HTTP API) takes priority over SMTP if both are set — use it on this free
+      # plan, since Render blocks outbound SMTP ports 25/465/587 here.
+      - key: BREVO_API_KEY
         sync: false
       - key: SMTP_HOST
         sync: false

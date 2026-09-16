@@ -56,11 +56,11 @@ Production-style: `npm run build` then `npm start`, and open http://localhost:87
 
 Copy `.env.example` to `.env`:
 
-- `SENDGRID_API_KEY` or `SMTP_*` to send real email — see the callout below before picking one.
+- `BREVO_API_KEY` or `SMTP_*` to send real email — see the callout below before picking one.
 - `TWILIO_*` to send real texts.
 - Browser push works out of the box (VAPID keys are generated on first run) once you click "Enable on this device" in Settings.
 
-**Email on Render's free tier: use SendGrid, not SMTP.** Render blocks outbound traffic to SMTP ports 25/465/587 on free web services (has since September 2025 — [changelog](https://render.com/changelog/free-web-services-will-no-longer-allow-outbound-traffic-to-smtp-ports)). `SMTP_*` (Gmail, etc.) will silently hang there — deliveries sit at `queued` in the Outbox forever, no error. `SENDGRID_API_KEY` sends over HTTPS instead, which isn't blocked, and takes priority over `SMTP_*` if both are set. Setup: sign up at [sendgrid.com](https://sendgrid.com) (free, 100 emails/day), verify one sender address under Settings → Sender Authentication → Single Sender Verification (a confirmation email, no domain required), then Settings → API Keys → create one. `SMTP_*` still works fine locally, on a paid Render plan, or any other host that doesn't block those ports.
+**Email on Render's free tier: use Brevo, not SMTP (and not SendGrid).** Render blocks outbound traffic to SMTP ports 25/465/587 on free web services (has since September 2025 — [changelog](https://render.com/changelog/free-web-services-will-no-longer-allow-outbound-traffic-to-smtp-ports)). `SMTP_*` (Gmail, etc.) will silently hang there — deliveries sit at `queued` in the Outbox forever, no error. `BREVO_API_KEY` sends over HTTPS instead, which isn't blocked, and takes priority over `SMTP_*` if both are set. SendGrid was the obvious alternative until it discontinued its free plan in May 2025 (paid only now, 60-day trial); Brevo's free plan (300 emails/day, no time limit, no card) is the current equivalent. Setup: sign up at [brevo.com](https://brevo.com), verify one sender address (a confirmation-link email, no domain required), then Settings → SMTP & API → API Keys → generate one. `SMTP_*` still works fine locally, on a paid Render plan, or any other host that doesn't block those ports.
 
 ## Deploying
 

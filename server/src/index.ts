@@ -40,7 +40,7 @@ app.use((err: any, _req: express.Request, res: express.Response, _next: express.
 
 app.listen(config.port, () => {
   console.log(`Dispatch server on ${config.serverUrl} (app: ${config.appUrl})`);
-  console.log(`  OAuth: ${config.canvasOAuth.enabled ? 'configured' : 'not configured (token + demo login available)'} · Email: ${config.sendgrid.enabled || config.smtp.enabled ? 'on' : 'simulated'} · SMS: ${config.twilio.enabled ? 'on' : 'simulated'}`);
+  console.log(`  OAuth: ${config.canvasOAuth.enabled ? 'configured' : 'not configured (token + demo login available)'} · Email: ${config.brevo.enabled || config.smtp.enabled ? 'on' : 'simulated'} · SMS: ${config.twilio.enabled ? 'on' : 'simulated'}`);
 });
 
 // ---------- background loops ----------

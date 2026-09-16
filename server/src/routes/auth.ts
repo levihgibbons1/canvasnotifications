@@ -25,7 +25,7 @@ async function finishLogin(res: any, userId: number) {
 }
 
 auth.get('/auth/capabilities', (_req, res) => {
-  res.json({ oauth: config.canvasOAuth.enabled, smtp: config.sendgrid.enabled || config.smtp.enabled, sms: config.twilio.enabled, syncIntervalMinutes: config.syncIntervalMs / 60000 });
+  res.json({ oauth: config.canvasOAuth.enabled, smtp: config.brevo.enabled || config.smtp.enabled, sms: config.twilio.enabled, syncIntervalMinutes: config.syncIntervalMs / 60000 });
 });
 
 /** Demo login: creates an isolated simulated Canvas for this browser. */

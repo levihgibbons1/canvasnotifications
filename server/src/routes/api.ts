@@ -29,7 +29,7 @@ api.get('/me', async (req, res) => {
   const unread = (await q.get<{ n: number }>('SELECT COUNT(*) n FROM notifications WHERE user_id = ? AND is_read = 0', req.user.id))!.n;
   res.json({ user: publicUser(req.user), settings: getSettings(req.user), unread, categories: CATEGORIES, syncing: isSyncing(req.user.id),
     courseCount: (await q.get<{ n: number }>('SELECT COUNT(*) n FROM courses WHERE user_id = ?', req.user.id))!.n,
-    capabilities: { oauth: config.canvasOAuth.enabled, smtp: config.sendgrid.enabled || config.smtp.enabled, sms: config.twilio.enabled, syncIntervalMinutes: config.syncIntervalMs / 60000 } });
+    capabilities: { oauth: config.canvasOAuth.enabled, smtp: config.brevo.enabled || config.smtp.enabled, sms: config.twilio.enabled, syncIntervalMinutes: config.syncIntervalMs / 60000 } });
 });
 
 // ---------- notifications ----------

@@ -47,8 +47,9 @@ export const config = {
   },
   // HTTP-API email transport. Prefer this over SMTP on hosts that block outbound SMTP
   // ports (e.g. Render's free tier, since September 2025) — HTTPS isn't blocked.
-  sendgrid: {
-    apiKey: env('SENDGRID_API_KEY'),
+  // Brevo, not SendGrid: SendGrid discontinued its free plan in May 2025 (paid only now).
+  brevo: {
+    apiKey: env('BREVO_API_KEY'),
     from: env('SMTP_FROM', 'Dispatch <dispatch@example.com>'),
     get enabled() { return Boolean(this.apiKey); },
   },
