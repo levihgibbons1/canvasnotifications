@@ -83,6 +83,18 @@ export async function enqueueDeliveries(user: UserRow, notif: NotificationRow) {
 }
 
 // ---------- rendering ----------
+/** Short, score-free phrase for the email subject line — the score still shows in the body. */
+function emailSubjectPhrase(n: NotificationRow): string {
+  if (n.category === 'grade_posted' || n.category === 'grade_changed') {
+    // Both titles are built as "<assignment name>: <score stuff>" — cut at the *last*
+    // ": " so an assignment name that itself contains ": " (e.g. "Essay: Draft 1") survives.
+    const cut = n.title.lastIndexOf(': ');
+    const name = cut > -1 ? n.title.slice(0, cut) : n.title;
+    return `${name} ${n.category === 'grade_posted' ? 'graded' : 'regraded'}`;
+  }
+  return n.title;
+}
+
 function render(channel: Channel, n: NotificationRow): { subject: string; body: string } {
   const course = n.course_name ? `[${n.course_name}] ` : '';
   const label = CATEGORY_LABEL[n.category] ?? n.category;
@@ -94,7 +106,7 @@ function render(channel: Channel, n: NotificationRow): { subject: string; body: 
     return { subject: `${course}${n.title}`, body: stripHtml(n.body).slice(0, 180) };
   }
   return {
-    subject: `${CATEGORY_EMOJI[n.category] ?? ''} ${course}${n.title}`.trim(),
+    subject: `${CATEGORY_EMOJI[n.category] ?? ''} ${n.course_name ? `${n.course_name} | ` : ''}${emailSubjectPhrase(n)}`.trim(),
     body: `${label}\n\n${n.title}\n${stripHtml(n.body)}\n\n${n.url ? `Open in Canvas: ${n.url}\n\n` : ''}— Dispatch for Canvas`,
   };
 }
