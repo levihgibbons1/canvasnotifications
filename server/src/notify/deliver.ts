@@ -130,8 +130,31 @@ async function sendPush(d: DeliveryRow, notif?: NotificationRow): Promise<'sent'
   }
 }
 
+/** Splits "Name <addr@example.com>" (or a bare address) into its parts. */
+function parseFrom(raw: string): { name?: string; email: string } {
+  const m = /^\s*(.*?)\s*<(.+)>\s*$/.exec(raw);
+  return m ? { name: m[1] || undefined, email: m[2] } : { email: raw.trim() };
+}
+
 let transporter: Transporter | null = null;
 async function sendEmail(d: DeliveryRow): Promise<'sent' | 'simulated'> {
+  // Prefer SendGrid's HTTP API: it works on hosts that block outbound SMTP ports
+  // (e.g. Render's free tier). Nodemailer/SMTP stays as a fallback for hosts that don't.
+  if (config.sendgrid.enabled) {
+    const from = parseFrom(config.sendgrid.from);
+    const res = await fetch('https://api.sendgrid.com/v3/mail/send', {
+      method: 'POST',
+      headers: { Authorization: `Bearer ${config.sendgrid.apiKey}`, 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        personalizations: [{ to: [{ email: d.address }] }],
+        from,
+        subject: d.subject,
+        content: [{ type: 'text/plain', value: d.body }],
+      }),
+    });
+    if (!res.ok) throw new Error(`SendGrid ${res.status}: ${(await res.text()).slice(0, 300)}`);
+    return 'sent';
+  }
   if (!config.smtp.enabled) return 'simulated';
   transporter ??= nodemailer.createTransport({ host: config.smtp.host, port: config.smtp.port, secure: config.smtp.port === 465, auth: config.smtp.user ? { user: config.smtp.user, pass: config.smtp.pass } : undefined });
   await transporter.sendMail({ from: config.smtp.from, to: d.address, subject: d.subject, text: d.body });
