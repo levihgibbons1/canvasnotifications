@@ -71,7 +71,7 @@ export default function Shell() {
             <span className="relative inline-block h-3 w-3 rounded-full bg-signal pulse-dot" />
             <span className="display text-[26px] font-semibold tracking-tight leading-none">Dispatch</span>
           </div>
-          <div className="eyebrow mt-2">for Canvas LMS</div>
+          <div className="eyebrow mt-2">for Canvas</div>
         </div>
 
         <nav className="px-3 flex lg:flex-col gap-0.5 overflow-x-auto">

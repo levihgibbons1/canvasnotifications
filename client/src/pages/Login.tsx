@@ -1,15 +1,9 @@
-import { useEffect, useMemo, useState, type ReactNode } from 'react';
+import { useMemo, useState, type ReactNode } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import { api, tz } from '../api';
 import { useApp, Spinner } from '../App';
 
-type Mode = 'demo' | 'token' | 'oauth';
-
-const MODES: { id: Mode; label: string; sub: string }[] = [
-  { id: 'demo', label: 'Try the demo', sub: 'No account needed' },
-  { id: 'token', label: 'Use my Canvas', sub: 'Works today, 2 minutes' },
-  { id: 'oauth', label: 'Canvas sign-in', sub: 'Needs your school\'s admin' },
-];
+const DEFAULT_BASE_URL = 'https://pacificachristian.instructure.com';
 
 function normalizeBase(raw: string): string | null {
   let u = raw.trim();
@@ -21,17 +15,11 @@ function normalizeBase(raw: string): string | null {
 export default function Login() {
   const { refresh } = useApp();
   const [params] = useSearchParams();
-  const [mode, setMode] = useState<Mode>('token');
-  const [caps, setCaps] = useState<{ oauth: boolean } | null>(null);
-  const [name, setName] = useState('');
-  const [baseUrl, setBaseUrl] = useState(() => { try { return localStorage.getItem('dispatch:base_url') ?? ''; } catch { return ''; } });
+  const [baseUrl, setBaseUrl] = useState(() => { try { return localStorage.getItem('dispatch:base_url') || DEFAULT_BASE_URL; } catch { return DEFAULT_BASE_URL; } });
   const [token, setToken] = useState('');
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(params.get('error'));
   const base = useMemo(() => normalizeBase(baseUrl), [baseUrl]);
-
-  useEffect(() => { fetch('/auth/capabilities').then(r => r.json()).then(setCaps).catch(() => setCaps({ oauth: false })); }, []);
-  useEffect(() => { try { if (base) localStorage.setItem('dispatch:base_url', baseUrl.trim()); } catch { /* ignore */ } }, [base, baseUrl]);
 
   const go = async (fn: () => Promise<unknown>) => {
     setBusy(true); setError(null);
@@ -46,7 +34,7 @@ export default function Login() {
         <div className="relative flex items-center gap-2.5 rise">
           <span className="inline-block h-3 w-3 rounded-full bg-signal pulse-dot" />
           <span className="display text-2xl font-semibold tracking-tight">Dispatch</span>
-          <span className="eyebrow ml-2 mt-1">for Canvas LMS</span>
+          <span className="eyebrow ml-2 mt-1">for Canvas</span>
         </div>
         <div className="relative mt-14 lg:mt-0 max-w-xl">
           <h1 className="display text-5xl lg:text-[56px] leading-[0.98] font-medium tracking-tight rise" style={{ animationDelay: '80ms' }}>
@@ -66,83 +54,39 @@ export default function Login() {
             ))}
           </ul>
         </div>
-        <div className="relative mt-14 eyebrow rise" style={{ animationDelay: '320ms' }}>read-only · uses the official Canvas API · never posts on your behalf</div>
       </section>
 
       <section className="px-6 py-10 lg:px-14 lg:py-16 flex items-start lg:items-center">
         <div className="w-full max-w-xl mx-auto rise" style={{ animationDelay: '200ms' }}>
           <div className="eyebrow mb-2">Get started</div>
-          <h2 className="display text-3xl font-medium tracking-tight">How do you want to connect?</h2>
+          <h2 className="display text-3xl font-medium tracking-tight">Connect your Canvas account</h2>
 
-          <div className="mt-5 grid grid-cols-3 gap-2">
-            {MODES.map(m => (
-              <button key={m.id} onClick={() => { setMode(m.id); setError(null); }} className={`rounded-xl border px-3 py-3 text-left transition-all ${mode === m.id ? 'border-ink bg-ink text-paper shadow-[var(--shadow-card)]' : 'border-line bg-card hover:border-ink-2'}`}>
-                <div className="text-sm font-semibold leading-tight">{m.label}</div>
-                <div className={`text-[11px] mt-1 leading-tight ${mode === m.id ? 'text-paper/70' : 'text-ink-3'}`}>{m.sub}</div>
+          <div className="card p-6 mt-5">
+            <Intro>Connect your real Canvas account with a personal access token. Dispatch only <em>reads</em>: courses, assignments, grades, announcements and your inbox.</Intro>
+            <Step n={1} title="Enter your school's Canvas address">
+              <input className="input" placeholder="e.g. myschool.instructure.com" value={baseUrl} onChange={e => setBaseUrl(e.target.value)} autoFocus />
+              <p className="text-xs text-ink-3 mt-1.5">The address in your browser bar when you're logged into Canvas. Some schools use their own domain like <span className="mono">canvas.myschool.edu</span>.</p>
+            </Step>
+            <Step n={2} title="Create an access token in Canvas">
+              <ol className="text-sm text-ink-2 space-y-1.5 list-none">
+                <li><Kbd>a</Kbd> Open your Canvas settings page:</li>
+                <li className="pl-6">
+                  {base ? <a className="btn btn-ghost py-1.5" href={`${base}/profile/settings`} target="_blank" rel="noreferrer">Open {base.replace(/^https?:\/\//, '')}/profile/settings ↗</a>
+                    : <span className="text-ink-3 text-xs">Enter your Canvas address above and a link will appear here.</span>}
+                </li>
+                <li><Kbd>b</Kbd> Scroll to <strong>Approved Integrations</strong> and click <strong>+ New Access Token</strong>.</li>
+                <li><Kbd>c</Kbd> Purpose: <span className="mono">Dispatch</span>. Leave the expiry blank. Click <strong>Generate Token</strong>.</li>
+                <li><Kbd>d</Kbd> Copy the token. Canvas shows it <em>only once</em>.</li>
+              </ol>
+              <p className="text-xs text-ink-3 mt-2">Don't see “+ New Access Token”? Ask your Canvas admin to enable access tokens for your account.</p>
+            </Step>
+            <Step n={3} title="Paste the token here" last>
+              <input className="input mono text-xs" type="password" placeholder="1234~AbCdEf…" value={token} onChange={e => setToken(e.target.value)} onKeyDown={e => e.key === 'Enter' && base && token && go(() => api.auth('/token', { base_url: base, token, timezone: tz() }))} />
+              <button className="btn btn-primary w-full justify-center mt-3" disabled={busy || !base || !token.trim()} onClick={() => go(() => api.auth('/token', { base_url: base!, token: token.trim(), timezone: tz() }))}>
+                {busy ? <><Spinner /> Checking with Canvas…</> : 'Connect & import my courses'}
               </button>
-            ))}
-          </div>
-
-          <div className="card p-6 mt-4">
-            {mode === 'demo' && (<>
-              <Intro>A simulated school with four courses, real-looking assignments, grades, announcements and messages. Nothing here touches a real Canvas.</Intro>
-              <Step n={1} title="Pick a display name">
-                <input className="input" placeholder="Demo Student" value={name} onChange={e => setName(e.target.value)} onKeyDown={e => e.key === 'Enter' && go(() => api.auth('/demo', { name: name || 'Demo Student', timezone: tz() }))} />
-              </Step>
-              <Step n={2} title="Enter, then press “Simulate Canvas activity”" last>
-                <p className="text-sm text-ink-3 mb-3">That button in the sidebar makes a pretend instructor post grades, comments and announcements so you can watch notifications flow.</p>
-                <button className="btn btn-primary w-full justify-center" disabled={busy} onClick={() => go(() => api.auth('/demo', { name: name || 'Demo Student', timezone: tz() }))}>
-                  {busy ? <Spinner /> : null} Enter the demo
-                </button>
-              </Step>
-            </>)}
-
-            {mode === 'token' && (<>
-              <Intro>Connect your real Canvas account with a personal access token. Dispatch only <em>reads</em>: courses, assignments, grades, announcements and your inbox.</Intro>
-              <Step n={1} title="Enter your school's Canvas address">
-                <input className="input" placeholder="e.g. myschool.instructure.com" value={baseUrl} onChange={e => setBaseUrl(e.target.value)} autoFocus />
-                <p className="text-xs text-ink-3 mt-1.5">The address in your browser bar when you're logged into Canvas. Some schools use their own domain like <span className="mono">canvas.myschool.edu</span>.</p>
-              </Step>
-              <Step n={2} title="Create an access token in Canvas">
-                <ol className="text-sm text-ink-2 space-y-1.5 list-none">
-                  <li><Kbd>a</Kbd> Open your Canvas settings page:</li>
-                  <li className="pl-6">
-                    {base ? <a className="btn btn-ghost py-1.5" href={`${base}/profile/settings`} target="_blank" rel="noreferrer">Open {base.replace(/^https?:\/\//, '')}/profile/settings ↗</a>
-                      : <span className="text-ink-3 text-xs">Enter your Canvas address above and a link will appear here.</span>}
-                  </li>
-                  <li><Kbd>b</Kbd> Scroll to <strong>Approved Integrations</strong> and click <strong>+ New Access Token</strong>.</li>
-                  <li><Kbd>c</Kbd> Purpose: <span className="mono">Dispatch</span>. Leave the expiry blank. Click <strong>Generate Token</strong>.</li>
-                  <li><Kbd>d</Kbd> Copy the token. Canvas shows it <em>only once</em>.</li>
-                </ol>
-                <p className="text-xs text-ink-3 mt-2">Don't see “+ New Access Token”? Your school has disabled student tokens; use “Canvas sign-in” instead, which needs an admin.</p>
-              </Step>
-              <Step n={3} title="Paste the token here" last>
-                <input className="input mono text-xs" type="password" placeholder="1234~AbCdEf…" value={token} onChange={e => setToken(e.target.value)} onKeyDown={e => e.key === 'Enter' && base && token && go(() => api.auth('/token', { base_url: base, token, timezone: tz() }))} />
-                <button className="btn btn-primary w-full justify-center mt-3" disabled={busy || !base || !token.trim()} onClick={() => go(() => api.auth('/token', { base_url: base!, token: token.trim(), timezone: tz() }))}>
-                  {busy ? <><Spinner /> Checking with Canvas…</> : 'Connect & import my courses'}
-                </button>
-                <p className="text-xs text-ink-3 mt-2">Stored on this server only. Revoke it any time from the same Canvas page and Dispatch is cut off instantly.</p>
-              </Step>
-            </>)}
-
-            {mode === 'oauth' && (<>
-              <Intro>The full “Log in with Canvas” flow, the right choice for a shared deployment. It needs a Developer Key that only a Canvas administrator can create.</Intro>
-              <Step n={1} title="Ask your Canvas admin for a Developer Key">
-                <p className="text-sm text-ink-2">In Canvas: <strong>Admin → Developer Keys → + Developer Key → API Key</strong>. Redirect URI:</p>
-                <code className="block mono text-xs bg-paper-2 rounded-md px-3 py-2 mt-2 select-all">{window.location.origin.replace(/:5173$/, ':8787')}/auth/canvas/callback</code>
-                <p className="text-xs text-ink-3 mt-2">Turn the key <strong>On</strong>. They'll give you an ID (a long number) and a secret.</p>
-              </Step>
-              <Step n={2} title="Add the key to this server's .env file and restart">
-                <code className="block mono text-xs bg-paper-2 rounded-md px-3 py-2 whitespace-pre select-all">{`CANVAS_CLIENT_ID=1000000000001\nCANVAS_CLIENT_SECRET=…`}</code>
-                <div className={`mt-2 text-xs font-medium ${caps?.oauth ? 'text-moss' : 'text-signal'}`}>{caps === null ? 'Checking…' : caps.oauth ? '✓ Configured on this server' : '✗ Not configured on this server yet'}</div>
-              </Step>
-              <Step n={3} title="Sign in through Canvas" last>
-                <input className="input" placeholder="e.g. myschool.instructure.com" value={baseUrl} onChange={e => setBaseUrl(e.target.value)} />
-                <a className={`btn btn-primary w-full justify-center mt-3 ${!caps?.oauth || !base ? 'pointer-events-none opacity-50' : ''}`} href={`/auth/canvas/start?base_url=${encodeURIComponent(base ?? '')}&timezone=${encodeURIComponent(tz())}`}>
-                  Continue with Canvas →
-                </a>
-              </Step>
-            </>)}
+              <p className="text-xs text-ink-3 mt-2">Stored on this server only. Revoke it any time from the same Canvas page and Dispatch is cut off instantly.</p>
+            </Step>
 
             {error && <div className="mt-4 rounded-lg bg-signal/10 border border-signal/30 px-3 py-2.5 text-sm text-signal-deep"><strong>Couldn't connect.</strong> {error}</div>}
           </div>
