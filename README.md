@@ -60,6 +60,18 @@ Copy `.env.example` to `.env`:
 - `TWILIO_*` to send real texts.
 - Browser push works out of the box (VAPID keys are generated on first run) once you click "Enable on this device" in Settings.
 
+## Deploying
+
+Dispatch is a long-running server: it polls Canvas on a timer, evaluates reminders every minute, and keeps state in a SQLite file. That fits a host that runs a persistent Node process with a disk, such as Railway, Render, Fly.io, or a small VPS:
+
+```bash
+npm install && npm run build && npm start
+```
+
+Set `SERVER_URL` and `APP_URL` to the public URL, `SESSION_SECRET` to a long random string, and `DB_PATH` to a persistent volume.
+
+**Vercel note.** Vercel runs serverless functions with no background timers and no writable disk, so the current server cannot run there unchanged. To target Vercel, the sync and reminder loops would move to Vercel Cron hitting `/api/cron/*` routes, SQLite would move to a hosted database such as Vercel Postgres or Turso, and the Express app would be wrapped as a serverless function. The client build in `client/dist` deploys to Vercel as-is.
+
 ## Prototype limits
 
 - Tokens are stored unencrypted in the SQLite file. Encrypt at rest before deploying.
