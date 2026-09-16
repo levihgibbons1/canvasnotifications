@@ -1,0 +1,78 @@
+@import "tailwindcss";
+
+@theme {
+  --font-display: "Fraunces", "Iowan Old Style", Georgia, serif;
+  --font-sans: "Instrument Sans", "Helvetica Neue", Arial, sans-serif;
+  --font-mono: "JetBrains Mono", ui-monospace, SFMono-Regular, Menlo, monospace;
+
+  --color-paper: #f5efe4;
+  --color-paper-2: #ece3d2;
+  --color-paper-3: #e2d7c2;
+  --color-card: #fbf8f1;
+  --color-ink: #16150f;
+  --color-ink-2: #4a463b;
+  --color-ink-3: #8a8474;
+  --color-line: #d8cfbc;
+  --color-line-2: #c7bca4;
+
+  --color-signal: #e4572e;
+  --color-signal-deep: #b5391a;
+  --color-navy: #1f3a93;
+  --color-moss: #2f7d4a;
+  --color-plum: #7a3e9d;
+  --color-teal: #1d7a86;
+  --color-gold: #b9800f;
+
+  --shadow-card: 0 1px 0 rgba(22, 21, 15, 0.06), 0 8px 24px -16px rgba(22, 21, 15, 0.35);
+  --shadow-pop: 0 12px 40px -12px rgba(22, 21, 15, 0.45);
+}
+
+html { color-scheme: light; }
+body {
+  @apply bg-paper text-ink font-sans antialiased;
+  background-image:
+    radial-gradient(1200px 600px at 10% -10%, rgba(228, 87, 46, 0.08), transparent 60%),
+    radial-gradient(800px 500px at 100% 0%, rgba(31, 58, 147, 0.07), transparent 60%);
+  background-attachment: fixed;
+}
+body::before {
+  content: "";
+  position: fixed; inset: 0; pointer-events: none; z-index: 0; opacity: 0.35;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='160' height='160'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='2' stitchTiles='stitch'/%3E%3CfeColorMatrix values='0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0.06 0'/%3E%3C/filter%3E%3Crect width='160' height='160' filter='url(%23n)'/%3E%3C/svg%3E");
+}
+#root { position: relative; z-index: 1; }
+
+::selection { background: #e4572e; color: #fbf8f1; }
+
+.display { font-family: var(--font-display); font-variation-settings: "opsz" 144; }
+.mono { font-family: var(--font-mono); }
+.eyebrow { @apply font-mono text-[11px] uppercase tracking-[0.14em] text-ink-3; }
+
+.card { @apply bg-card border border-line rounded-xl; box-shadow: var(--shadow-card); }
+.btn { @apply inline-flex items-center gap-2 rounded-lg px-3.5 py-2 text-sm font-medium border transition-all duration-150 select-none cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed; }
+.btn-primary { @apply bg-ink text-paper border-ink hover:bg-signal hover:border-signal; }
+.btn-ghost { @apply bg-transparent border-line text-ink-2 hover:border-ink-2 hover:text-ink; }
+.btn-signal { @apply bg-signal text-white border-signal hover:bg-signal-deep hover:border-signal-deep; }
+.input { @apply w-full rounded-lg border border-line bg-white/70 px-3 py-2 text-sm text-ink placeholder:text-ink-3 focus:outline-none focus:border-ink focus:ring-2 focus:ring-ink/10; }
+.chip { @apply inline-flex items-center gap-1.5 rounded-full border border-line px-3 py-1 text-xs font-medium text-ink-2 cursor-pointer transition-colors hover:border-ink-2; }
+.chip[data-on="true"] { @apply bg-ink text-paper border-ink; }
+
+.cat-bar { position: absolute; left: 0; top: 10px; bottom: 10px; width: 3px; border-radius: 3px; }
+
+@keyframes rise { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: none; } }
+.rise { animation: rise 0.45s cubic-bezier(0.2, 0.7, 0.2, 1) both; }
+@keyframes pulse-dot { 0%, 100% { box-shadow: 0 0 0 0 rgba(228, 87, 46, 0.5); } 60% { box-shadow: 0 0 0 7px rgba(228, 87, 46, 0); } }
+.pulse-dot { animation: pulse-dot 1.8s ease-out infinite; }
+@keyframes spin { to { transform: rotate(360deg); } }
+.spin { animation: spin 1s linear infinite; }
+
+.seg { @apply inline-flex rounded-lg border border-line bg-paper-2 p-0.5; }
+.seg button { @apply rounded-md px-2.5 py-1 text-[11px] font-medium font-mono uppercase tracking-wider text-ink-3 transition-colors; }
+.seg button[data-on="true"] { @apply bg-card text-ink shadow-sm; }
+
+.switch { @apply relative inline-block h-6 w-11 rounded-full border border-line-2 bg-paper-3 transition-colors cursor-pointer; }
+.switch::after { content: ""; @apply absolute left-0.5 top-0.5 h-[18px] w-[18px] rounded-full bg-card shadow transition-transform; }
+.switch[data-on="true"] { @apply bg-ink border-ink; }
+.switch[data-on="true"]::after { transform: translateX(20px); }
+
+.prose-body a { @apply underline; }

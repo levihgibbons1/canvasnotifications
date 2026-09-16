@@ -1,0 +1,15 @@
+{
+  "name": "dispatch-for-canvas",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Dispatch — an all-in-one notifications, reminders and alerts hub for Canvas LMS",
+  "workspaces": ["server", "client"],
+  "scripts": {
+    "dev": "concurrently -k -n server,client -c blue,magenta \"npm run dev -w server\" \"npm run dev -w client\"",
+    "build": "npm run build -w client",
+    "start": "npm run start -w server"
+  },
+  "devDependencies": {
+    "concurrently": "^9.2.1"
+  }
+}
