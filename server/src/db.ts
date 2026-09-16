@@ -153,9 +153,12 @@ if (config.databaseUrl) {
   get = async <T = Row>(sql: string, ...params: any[]) => (await pool.query(toPgPlaceholders(sql), params)).rows[0] as T | undefined;
   all = async <T = Row>(sql: string, ...params: any[]) => (await pool.query(toPgPlaceholders(sql), params)).rows as T[];
   run = async (sql: string, ...params: any[]) => {
-    const isInsert = /^\s*insert/i.test(sql);
+    const insertMatch = /^\s*insert\s+into\s+(\w+)/i.exec(sql);
     const hasReturning = /\breturning\b/i.test(sql);
-    const text = isInsert && !hasReturning ? `${sql} RETURNING id` : sql;
+    // courses, snapshot and kv use a composite/natural primary key, not a serial `id` column —
+    // every other table does, so those three are excluded from the auto-RETURNING.
+    const NO_ID_TABLE = new Set(['courses', 'snapshot', 'kv']);
+    const text = insertMatch && !hasReturning && !NO_ID_TABLE.has(insertMatch[1].toLowerCase()) ? `${sql} RETURNING id` : sql;
     const res = await pool.query(toPgPlaceholders(text), params);
     return { lastInsertRowid: res.rows[0]?.id, changes: res.rowCount ?? 0 };
   };
