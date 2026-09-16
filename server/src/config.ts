@@ -14,8 +14,10 @@ if (existsSync(envPath)) {
 }
 
 const env = (k: string, d = '') => process.env[k] ?? d;
-// Deliberately not the generic PORT variable: dev tooling often sets PORT for the Vite client.
-const port = Number(env('SERVER_PORT', '8787'));
+// SERVER_PORT always wins when set explicitly (local dev, where dev tooling may already
+// export a PORT for an unrelated process). Otherwise fall back to PORT, which is what
+// hosts like Render/Railway inject and require the app to bind to.
+const port = Number(env('SERVER_PORT') || env('PORT') || '8787');
 
 export const config = {
   port,

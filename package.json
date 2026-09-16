@@ -4,6 +4,9 @@
   "private": true,
   "description": "Dispatch — an all-in-one notifications, reminders and alerts hub for Canvas LMS",
   "workspaces": ["server", "client"],
+  "engines": {
+    "node": ">=22.13.0"
+  },
   "scripts": {
     "dev": "concurrently -k -n server,client -c blue,magenta \"npm run dev -w server\" \"npm run dev -w client\"",
     "build": "npm run build -w client",
