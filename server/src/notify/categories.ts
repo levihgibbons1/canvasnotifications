@@ -31,3 +31,19 @@ export const CATEGORIES: CategoryDef[] = [
 ];
 
 export const CATEGORY_LABEL = Object.fromEntries(CATEGORIES.map(c => [c.id, c.label])) as Record<Category, string>;
+
+/** One attention-grabbing emoji per category, used as an email subject-line prefix. */
+export const CATEGORY_EMOJI: Record<Category, string> = {
+  grade_posted: '🎓',
+  grade_changed: '🔄',
+  submission_comment: '💬',
+  assignment_created: '📌',
+  due_date_changed: '📅',
+  due_reminder: '⏰',
+  missing_assignment: '⚠️',
+  reminder: '🔔',
+  announcement: '📢',
+  discussion_reply: '💭',
+  conversation_message: '✉️',
+  digest: '🗞️',
+};

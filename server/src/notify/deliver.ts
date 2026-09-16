@@ -8,7 +8,7 @@ import webpush from 'web-push';
 import nodemailer, { type Transporter } from 'nodemailer';
 import { q, kv, now } from '../db.js';
 import { config } from '../config.js';
-import { CATEGORY_LABEL, type Channel, type Category } from './categories.js';
+import { CATEGORY_LABEL, CATEGORY_EMOJI, type Channel, type Category } from './categories.js';
 import { renderEmailHtml } from './emailHtml.js';
 import { getSettings, getUser, freqFor, isQuietNow, quietHoursEnd, localParts, type UserRow, type Settings } from '../users.js';
 
@@ -94,7 +94,7 @@ function render(channel: Channel, n: NotificationRow): { subject: string; body: 
     return { subject: `${course}${n.title}`, body: stripHtml(n.body).slice(0, 180) };
   }
   return {
-    subject: `${course}${n.title}`,
+    subject: `${CATEGORY_EMOJI[n.category] ?? ''} ${course}${n.title}`.trim(),
     body: `${label}\n\n${n.title}\n${stripHtml(n.body)}\n\n${n.url ? `Open in Canvas: ${n.url}\n\n` : ''}— Dispatch for Canvas`,
   };
 }
@@ -238,7 +238,7 @@ export async function sendDigest(user: UserRow, settings: Settings, channel: Cha
   }
   lines.push('');
   lines.push(`Open Dispatch: ${config.appUrl}`);
-  const subject = `Dispatch digest: ${upcoming.length} due soon, ${pending.length} update${pending.length === 1 ? '' : 's'}`;
+  const subject = `${CATEGORY_EMOJI.digest} Dispatch digest: ${upcoming.length} due soon, ${pending.length} update${pending.length === 1 ? '' : 's'}`;
   const body = channel === 'sms' ? lines.join('\n').slice(0, 600) : lines.join('\n');
 
   const digestNotif = await createNotification(user, {
