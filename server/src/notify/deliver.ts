@@ -9,6 +9,7 @@ import nodemailer, { type Transporter } from 'nodemailer';
 import { q, kv, now } from '../db.js';
 import { config } from '../config.js';
 import { CATEGORY_LABEL, type Channel, type Category } from './categories.js';
+import { renderEmailHtml } from './emailHtml.js';
 import { getSettings, getUser, freqFor, isQuietNow, quietHoursEnd, localParts, type UserRow, type Settings } from '../users.js';
 
 export interface NotificationRow {
@@ -109,7 +110,7 @@ export async function sendDelivery(id: number) {
   try {
     let status: 'sent' | 'simulated' = 'simulated';
     if (d.channel === 'push') status = await sendPush(d, notif);
-    else if (d.channel === 'email') status = await sendEmail(d);
+    else if (d.channel === 'email') status = await sendEmail(d, notif);
     else if (d.channel === 'sms') status = await sendSms(d);
     await q.run('UPDATE deliveries SET status = ?, sent_at = ?, error = NULL WHERE id = ?', status, now(), id);
   } catch (e: any) {
@@ -137,7 +138,14 @@ function parseFrom(raw: string): { name?: string; email: string } {
 }
 
 let transporter: Transporter | null = null;
-async function sendEmail(d: DeliveryRow): Promise<'sent' | 'simulated'> {
+async function sendEmail(d: DeliveryRow, notif?: NotificationRow): Promise<'sent' | 'simulated'> {
+  const html = renderEmailHtml({
+    eyebrow: notif ? (CATEGORY_LABEL[notif.category] ?? notif.category) : undefined,
+    title: notif?.title ?? d.subject,
+    body: notif ? stripHtml(notif.body) : d.body,
+    ctaUrl: notif?.url || config.appUrl,
+    ctaLabel: notif?.url ? 'Open in Canvas' : 'Open Dispatch',
+  });
   // Prefer Brevo's HTTP API: it works on hosts that block outbound SMTP ports
   // (e.g. Render's free tier). Nodemailer/SMTP stays as a fallback for hosts that don't.
   if (config.brevo.enabled) {
@@ -150,6 +158,7 @@ async function sendEmail(d: DeliveryRow): Promise<'sent' | 'simulated'> {
         to: [{ email: d.address }],
         subject: d.subject,
         textContent: d.body,
+        htmlContent: html,
       }),
     });
     if (!res.ok) throw new Error(`Brevo ${res.status}: ${(await res.text()).slice(0, 300)}`);
@@ -157,7 +166,7 @@ async function sendEmail(d: DeliveryRow): Promise<'sent' | 'simulated'> {
   }
   if (!config.smtp.enabled) return 'simulated';
   transporter ??= nodemailer.createTransport({ host: config.smtp.host, port: config.smtp.port, secure: config.smtp.port === 465, auth: config.smtp.user ? { user: config.smtp.user, pass: config.smtp.pass } : undefined });
-  await transporter.sendMail({ from: config.smtp.from, to: d.address, subject: d.subject, text: d.body });
+  await transporter.sendMail({ from: config.smtp.from, to: d.address, subject: d.subject, text: d.body, html });
   return 'sent';
 }
 
