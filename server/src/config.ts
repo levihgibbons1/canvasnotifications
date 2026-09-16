@@ -19,14 +19,20 @@ const env = (k: string, d = '') => process.env[k] ?? d;
 // hosts like Render/Railway inject and require the app to bind to.
 const port = Number(env('SERVER_PORT') || env('PORT') || '8787');
 
+// Render (and Railway) inject the service's own public URL at runtime — use it as the
+// default so a fresh deploy works without a manual second deploy to set APP_URL/SERVER_URL.
+const platformUrl = env('RENDER_EXTERNAL_URL');
+
 export const config = {
   port,
   isProd: env('NODE_ENV') === 'production',
   /** Where the browser app lives (Vite dev server in dev, this server in prod). */
-  appUrl: env('APP_URL', env('NODE_ENV') === 'production' ? `http://localhost:${port}` : 'http://localhost:5173'),
-  serverUrl: env('SERVER_URL', `http://localhost:${port}`),
+  appUrl: env('APP_URL', platformUrl || (env('NODE_ENV') === 'production' ? `http://localhost:${port}` : 'http://localhost:5173')),
+  serverUrl: env('SERVER_URL', platformUrl || `http://localhost:${port}`),
   sessionSecret: env('SESSION_SECRET', 'dispatch-dev-secret'),
   dbPath: env('DB_PATH', resolve(process.cwd(), '..', 'data', 'dispatch.sqlite')),
+  /** Postgres connection string (e.g. Supabase). Unset means fall back to the local SQLite file. */
+  databaseUrl: env('DATABASE_URL') || undefined,
   syncIntervalMs: Number(env('SYNC_INTERVAL_MINUTES', '5')) * 60_000,
   canvasOAuth: {
     clientId: env('CANVAS_CLIENT_ID'),

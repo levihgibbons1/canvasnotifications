@@ -1,0 +1,44 @@
+services:
+  - type: web
+    name: dispatch-for-canvas
+    runtime: node
+    plan: free
+    region: oregon
+    buildCommand: npm install && npm run build
+    startCommand: npm start
+    healthCheckPath: /
+    envVars:
+      - key: SESSION_SECRET
+        generateValue: true
+      - key: SYNC_INTERVAL_MINUTES
+        value: "5"
+      # Persistence (optional but recommended). Without it, Dispatch falls back to a local
+      # SQLite file, which Render's free tier wipes on every sleep/wake and redeploy.
+      # Paste a Postgres connection string here (e.g. a free Supabase project's URI) for
+      # state that survives restarts. See README > Deploying.
+      - key: DATABASE_URL
+        sync: false
+      # Canvas OAuth2 (optional) — only needed for the "Canvas login" flow.
+      # Leave unset to keep demo + access-token sign-in only.
+      - key: CANVAS_CLIENT_ID
+        sync: false
+      - key: CANVAS_CLIENT_SECRET
+        sync: false
+      # Real email delivery (optional) — unset means email lands in the in-app Outbox.
+      - key: SMTP_HOST
+        sync: false
+      - key: SMTP_PORT
+        sync: false
+      - key: SMTP_USER
+        sync: false
+      - key: SMTP_PASS
+        sync: false
+      - key: SMTP_FROM
+        sync: false
+      # Real SMS delivery (optional) — unset means SMS lands in the in-app Outbox.
+      - key: TWILIO_ACCOUNT_SID
+        sync: false
+      - key: TWILIO_AUTH_TOKEN
+        sync: false
+      - key: TWILIO_FROM
+        sync: false

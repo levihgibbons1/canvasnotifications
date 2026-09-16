@@ -19,8 +19,8 @@ function normalizeBase(url: string): string {
   return `${parsed.protocol}//${parsed.host}`;
 }
 
-function finishLogin(res: any, userId: number) {
-  const sid = createSession(userId);
+async function finishLogin(res: any, userId: number) {
+  const sid = await createSession(userId);
   res.cookie(COOKIE, sid, cookieOpts);
 }
 
@@ -32,10 +32,10 @@ auth.get('/auth/capabilities', (_req, res) => {
 auth.post('/auth/demo', async (req, res) => {
   const name = String(req.body?.name || 'Demo Student').slice(0, 60);
   const tz = String(req.body?.timezone || 'UTC');
-  const user = upsertUser({ auth_mode: 'demo', canvas_base_url: 'https://canvas.demo.edu', canvas_user_id: `demo-${randomBytes(4).toString('hex')}`, name, primary_email: 'student@canvas.demo.edu', timezone: tz });
-  resetWorld(`u${user.id}`, name);
-  const s = getSettings(user); s.timezone = tz; saveSettings(user.id, s);
-  finishLogin(res, user.id);
+  const user = await upsertUser({ auth_mode: 'demo', canvas_base_url: 'https://canvas.demo.edu', canvas_user_id: `demo-${randomBytes(4).toString('hex')}`, name, primary_email: 'student@canvas.demo.edu', timezone: tz });
+  await resetWorld(`u${user.id}`, name);
+  const s = getSettings(user); s.timezone = tz; await saveSettings(user.id, s);
+  await finishLogin(res, user.id);
   await syncUser(user.id, { initial: true });
   res.json({ ok: true });
 });
@@ -49,9 +49,9 @@ auth.post('/auth/token', async (req, res) => {
     if (!token) return res.status(400).json({ error: 'Access token is required' });
     const client = new CanvasClient(base, token);
     const profile = await client.profile();
-    const user = upsertUser({ auth_mode: 'token', canvas_base_url: base, canvas_user_id: profile.id, name: profile.name, avatar_url: profile.avatar_url, primary_email: profile.primary_email, access_token: token, timezone: tz });
-    const s = getSettings(user); s.timezone = tz; saveSettings(user.id, s);
-    finishLogin(res, user.id);
+    const user = await upsertUser({ auth_mode: 'token', canvas_base_url: base, canvas_user_id: profile.id, name: profile.name, avatar_url: profile.avatar_url, primary_email: profile.primary_email, access_token: token, timezone: tz });
+    const s = getSettings(user); s.timezone = tz; await saveSettings(user.id, s);
+    await finishLogin(res, user.id);
     res.json({ ok: true });
     void syncUser(user.id, { initial: user.last_sync_at == null });
   } catch (e: any) {
@@ -90,10 +90,10 @@ auth.get('/auth/canvas/callback', async (req, res) => {
     const tok = await tokenRes.json() as { access_token: string; refresh_token?: string; expires_in?: number; user: { id: number; name: string } };
     const client = new CanvasClient(base, tok.access_token);
     const profile = await client.profile().catch(() => ({ id: String(tok.user.id), name: tok.user.name } as any));
-    const user = upsertUser({ auth_mode: 'oauth', canvas_base_url: base, canvas_user_id: String(profile.id), name: profile.name, avatar_url: profile.avatar_url, primary_email: profile.primary_email, access_token: tok.access_token, refresh_token: tok.refresh_token ?? null, token_expires_at: tok.expires_in ? now() + tok.expires_in * 1000 : null, timezone: tz });
-    const s = getSettings(user); s.timezone = tz; saveSettings(user.id, s);
+    const user = await upsertUser({ auth_mode: 'oauth', canvas_base_url: base, canvas_user_id: String(profile.id), name: profile.name, avatar_url: profile.avatar_url, primary_email: profile.primary_email, access_token: tok.access_token, refresh_token: tok.refresh_token ?? null, token_expires_at: tok.expires_in ? now() + tok.expires_in * 1000 : null, timezone: tz });
+    const s = getSettings(user); s.timezone = tz; await saveSettings(user.id, s);
     res.clearCookie('oauth_state');
-    finishLogin(res, user.id);
+    await finishLogin(res, user.id);
     void syncUser(user.id, { initial: user.last_sync_at == null });
     res.redirect(config.appUrl);
   } catch (e: any) {
@@ -101,8 +101,8 @@ auth.get('/auth/canvas/callback', async (req, res) => {
   }
 });
 
-auth.post('/auth/logout', (req, res) => {
-  destroySession(req.cookies?.[COOKIE]);
+auth.post('/auth/logout', async (req, res) => {
+  await destroySession(req.cookies?.[COOKIE]);
   res.clearCookie(COOKIE, { path: '/' });
   res.json({ ok: true });
 });

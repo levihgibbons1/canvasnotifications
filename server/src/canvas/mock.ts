@@ -86,28 +86,28 @@ function seed(name: string): World {
 const worlds = new Map<string, World>();
 const key = (userKey: string) => `mockworld:${userKey}`;
 
-export function loadWorld(userKey: string, name = 'Demo Student'): World {
+export async function loadWorld(userKey: string, name = 'Demo Student'): Promise<World> {
   let w = worlds.get(userKey);
   if (w) return w;
-  const stored = kv.get(key(userKey));
+  const stored = await kv.get(key(userKey));
   w = stored ? (JSON.parse(stored) as World) : seed(name);
   worlds.set(userKey, w);
-  if (!stored) saveWorld(userKey);
+  if (!stored) await saveWorld(userKey);
   return w;
 }
-function saveWorld(userKey: string) {
+async function saveWorld(userKey: string) {
   const w = worlds.get(userKey);
-  if (w) kv.set(key(userKey), JSON.stringify(w));
+  if (w) await kv.set(key(userKey), JSON.stringify(w));
 }
-export function resetWorld(userKey: string, name: string) {
+export async function resetWorld(userKey: string, name: string) {
   worlds.delete(userKey);
-  kv.del(key(userKey));
+  await kv.del(key(userKey));
   return loadWorld(userKey, name);
 }
 
 /** Advance the simulated institution: an instructor grades, comments, posts, etc. */
-export function simulateActivity(userKey: string, kind?: string): string {
-  const w = loadWorld(userKey);
+export async function simulateActivity(userKey: string, kind?: string): Promise<string> {
+  const w = await loadWorld(userKey);
   const now = Date.now();
   const pick = <T,>(arr: T[]) => arr[Math.floor(Math.random() * arr.length)];
   const kinds = ['grade', 'comment', 'announcement', 'assignment', 'message', 'discussion', 'due_change', 'regrade'];
@@ -181,19 +181,19 @@ export function simulateActivity(userKey: string, kind?: string): string {
   }
   w.log.unshift(`${new Date(now).toLocaleTimeString()} — ${msg}`);
   w.log = w.log.slice(0, 50);
-  saveWorld(userKey);
+  await saveWorld(userKey);
   return msg;
 }
 
 export class MockCanvas implements CanvasSource {
   constructor(private userKey: string, private name = 'Demo Student') {}
   private w() { return loadWorld(this.userKey, this.name); }
-  async profile() { return this.w().profile; }
-  async courses() { return this.w().courses; }
-  async assignments(courseId: string) { return this.w().assignments.filter(a => a.course_id === courseId); }
+  async profile() { return (await this.w()).profile; }
+  async courses() { return (await this.w()).courses; }
+  async assignments(courseId: string) { return (await this.w()).assignments.filter(a => a.course_id === courseId); }
   async announcements(courseIds: string[], sinceIso: string) {
-    return this.w().announcements.filter(a => courseIds.includes(a.course_id) && a.posted_at >= sinceIso);
+    return (await this.w()).announcements.filter(a => courseIds.includes(a.course_id) && a.posted_at >= sinceIso);
   }
-  async conversations() { return this.w().conversations; }
-  async discussions(courseId: string) { return this.w().discussions.filter(d => d.course_id === courseId); }
+  async conversations() { return (await this.w()).conversations; }
+  async discussions(courseId: string) { return (await this.w()).discussions.filter(d => d.course_id === courseId); }
 }

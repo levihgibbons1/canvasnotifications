@@ -13,8 +13,8 @@ export const api = Router();
 
 declare global { namespace Express { interface Request { user: UserRow } } }
 
-api.use((req: Request, res: Response, next: NextFunction) => {
-  const user = readSession(req.cookies?.[SESSION_COOKIE]);
+api.use(async (req: Request, res: Response, next: NextFunction) => {
+  const user = await readSession(req.cookies?.[SESSION_COOKIE]);
   if (!user) return res.status(401).json({ error: 'Not signed in' });
   req.user = user;
   next();
@@ -25,48 +25,48 @@ const publicUser = (u: UserRow) => ({
   canvas_base_url: u.canvas_base_url, last_sync_at: u.last_sync_at, last_sync_error: u.last_sync_error,
 });
 
-api.get('/me', (req, res) => {
-  const unread = q.get<{ n: number }>('SELECT COUNT(*) n FROM notifications WHERE user_id = ? AND is_read = 0', req.user.id)!.n;
+api.get('/me', async (req, res) => {
+  const unread = (await q.get<{ n: number }>('SELECT COUNT(*) n FROM notifications WHERE user_id = ? AND is_read = 0', req.user.id))!.n;
   res.json({ user: publicUser(req.user), settings: getSettings(req.user), unread, categories: CATEGORIES, syncing: isSyncing(req.user.id),
-    courseCount: q.get<{ n: number }>('SELECT COUNT(*) n FROM courses WHERE user_id = ?', req.user.id)!.n,
+    courseCount: (await q.get<{ n: number }>('SELECT COUNT(*) n FROM courses WHERE user_id = ?', req.user.id))!.n,
     capabilities: { oauth: config.canvasOAuth.enabled, smtp: config.smtp.enabled, sms: config.twilio.enabled, syncIntervalMinutes: config.syncIntervalMs / 60000 } });
 });
 
 // ---------- notifications ----------
-api.get('/notifications', (req, res) => {
+api.get('/notifications', async (req, res) => {
   const { category, course, unread, limit = '200' } = req.query as Record<string, string>;
   const where: string[] = ['user_id = ?']; const params: any[] = [req.user.id];
   if (category) { where.push('category = ?'); params.push(category); }
   if (course) { where.push('course_id = ?'); params.push(course); }
   if (unread === '1') where.push('is_read = 0');
-  const rows = q.all<NotificationRow>(`SELECT * FROM notifications WHERE ${where.join(' AND ')} ORDER BY created_at DESC LIMIT ?`, ...params, Math.min(Number(limit) || 200, 500));
+  const rows = await q.all<NotificationRow>(`SELECT * FROM notifications WHERE ${where.join(' AND ')} ORDER BY created_at DESC LIMIT ?`, ...params, Math.min(Number(limit) || 200, 500));
   res.json(rows.map(r => ({ ...r, meta: JSON.parse(r.meta_json), is_read: Boolean(r.is_read) })));
 });
-api.post('/notifications/read', (req, res) => {
+api.post('/notifications/read', async (req, res) => {
   const ids: number[] = Array.isArray(req.body?.ids) ? req.body.ids.map(Number) : [];
-  if (req.body?.all) q.run('UPDATE notifications SET is_read = 1 WHERE user_id = ?', req.user.id);
-  else if (ids.length) q.run(`UPDATE notifications SET is_read = ? WHERE user_id = ? AND id IN (${ids.map(() => '?').join(',')})`, req.body?.read === false ? 0 : 1, req.user.id, ...ids);
+  if (req.body?.all) await q.run('UPDATE notifications SET is_read = 1 WHERE user_id = ?', req.user.id);
+  else if (ids.length) await q.run(`UPDATE notifications SET is_read = ? WHERE user_id = ? AND id IN (${ids.map(() => '?').join(',')})`, req.body?.read === false ? 0 : 1, req.user.id, ...ids);
   res.json({ ok: true });
 });
-api.delete('/notifications/:id', (req, res) => {
-  q.run('DELETE FROM notifications WHERE user_id = ? AND id = ?', req.user.id, Number(req.params.id));
+api.delete('/notifications/:id', async (req, res) => {
+  await q.run('DELETE FROM notifications WHERE user_id = ? AND id = ?', req.user.id, Number(req.params.id));
   res.json({ ok: true });
 });
 
 // ---------- courses ----------
-api.get('/courses', (req, res) => {
-  res.json(q.all('SELECT * FROM courses WHERE user_id = ? ORDER BY name', req.user.id).map(c => ({ ...c, muted: Boolean(c.muted) })));
+api.get('/courses', async (req, res) => {
+  res.json((await q.all('SELECT * FROM courses WHERE user_id = ? ORDER BY name', req.user.id)).map(c => ({ ...c, muted: Boolean(c.muted) })));
 });
-api.patch('/courses/:id', (req, res) => {
-  if (typeof req.body?.muted === 'boolean') q.run('UPDATE courses SET muted = ? WHERE user_id = ? AND canvas_id = ?', req.body.muted ? 1 : 0, req.user.id, req.params.id);
+api.patch('/courses/:id', async (req, res) => {
+  if (typeof req.body?.muted === 'boolean') await q.run('UPDATE courses SET muted = ? WHERE user_id = ? AND canvas_id = ?', req.body.muted ? 1 : 0, req.user.id, req.params.id);
   res.json({ ok: true });
 });
 
 // ---------- upcoming (assignments from the snapshot) ----------
-api.get('/upcoming', (req, res) => {
-  const courses = new Map(q.all<{ canvas_id: string; name: string; course_code: string; muted: number }>('SELECT canvas_id, name, course_code, muted FROM courses WHERE user_id = ?', req.user.id).map(c => [c.canvas_id, c]));
-  const rows = q.all<{ key: string; data_json: string }>(`SELECT key, data_json FROM snapshot WHERE user_id = ? AND kind = 'assignment'`, req.user.id);
-  const reminders = q.all<{ id: number; assignment_key: string | null; remind_at: number; fired: number; title: string; note: string | null }>('SELECT * FROM reminders WHERE user_id = ?', req.user.id);
+api.get('/upcoming', async (req, res) => {
+  const courses = new Map((await q.all<{ canvas_id: string; name: string; course_code: string; muted: number }>('SELECT canvas_id, name, course_code, muted FROM courses WHERE user_id = ?', req.user.id)).map(c => [c.canvas_id, c]));
+  const rows = await q.all<{ key: string; data_json: string }>(`SELECT key, data_json FROM snapshot WHERE user_id = ? AND kind = 'assignment'`, req.user.id);
+  const reminders = await q.all<{ id: number; assignment_key: string | null; remind_at: number; fired: number; title: string; note: string | null }>('SELECT * FROM reminders WHERE user_id = ?', req.user.id);
   const t = now();
   const items = rows.map(r => {
     const a = JSON.parse(r.data_json) as CanvasAssignment;
@@ -86,17 +86,17 @@ api.post('/reminders', async (req, res) => {
   const { assignment_key = null, title, note = null, remind_at } = req.body ?? {};
   const at = Number(remind_at);
   if (!title || !at) return res.status(400).json({ error: 'title and remind_at are required' });
-  const r = q.run('INSERT INTO reminders (user_id, assignment_key, title, note, remind_at, created_at) VALUES (?,?,?,?,?,?)', req.user.id, assignment_key, String(title).slice(0, 200), note ? String(note).slice(0, 500) : null, at, now());
+  const r = await q.run('INSERT INTO reminders (user_id, assignment_key, title, note, remind_at, created_at) VALUES (?,?,?,?,?,?)', req.user.id, assignment_key, String(title).slice(0, 200), note ? String(note).slice(0, 500) : null, at, now());
   await evaluateTimeRules(req.user.id);
   res.json({ id: Number(r.lastInsertRowid) });
 });
-api.delete('/reminders/:id', (req, res) => {
-  q.run('DELETE FROM reminders WHERE user_id = ? AND id = ?', req.user.id, Number(req.params.id));
+api.delete('/reminders/:id', async (req, res) => {
+  await q.run('DELETE FROM reminders WHERE user_id = ? AND id = ?', req.user.id, Number(req.params.id));
   res.json({ ok: true });
 });
 
 // ---------- settings ----------
-api.put('/settings', (req, res) => {
+api.put('/settings', async (req, res) => {
   const cur = getSettings(req.user);
   const b = req.body ?? {};
   const next: Settings = {
@@ -107,48 +107,48 @@ api.put('/settings', (req, res) => {
     quietHours: { ...cur.quietHours, ...(b.quietHours ?? {}) },
     missingAlerts: typeof b.missingAlerts === 'boolean' ? b.missingAlerts : cur.missingAlerts,
   };
-  saveSettings(req.user.id, next);
+  await saveSettings(req.user.id, next);
   res.json(next);
 });
 
 // ---------- channels ----------
-api.get('/channels', (req, res) => {
+api.get('/channels', async (req, res) => {
   res.json({
-    channels: q.all('SELECT id, type, address, verified, created_at FROM channels WHERE user_id = ? ORDER BY created_at', req.user.id),
-    push: q.all('SELECT id, endpoint, created_at FROM push_subscriptions WHERE user_id = ?', req.user.id).map((p: any) => ({ ...p, endpoint: p.endpoint.slice(0, 40) + '…' })),
+    channels: await q.all('SELECT id, type, address, verified, created_at FROM channels WHERE user_id = ? ORDER BY created_at', req.user.id),
+    push: (await q.all('SELECT id, endpoint, created_at FROM push_subscriptions WHERE user_id = ?', req.user.id)).map((p: any) => ({ ...p, endpoint: p.endpoint.slice(0, 40) + '…' })),
   });
 });
-api.post('/channels', (req, res) => {
+api.post('/channels', async (req, res) => {
   const type = req.body?.type, address = String(req.body?.address ?? '').trim();
   if (type !== 'email' && type !== 'sms') return res.status(400).json({ error: 'type must be email or sms' });
   if (type === 'email' && !/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(address)) return res.status(400).json({ error: 'Enter a valid email address' });
   if (type === 'sms' && !/^\+?[\d\s().-]{7,20}$/.test(address)) return res.status(400).json({ error: 'Enter a valid phone number, e.g. +1 555 123 4567' });
   const clean = type === 'sms' ? address.replace(/[^\d+]/g, '') : address.toLowerCase();
-  q.run('INSERT OR IGNORE INTO channels (user_id, type, address, verified, created_at) VALUES (?,?,?,1,?)', req.user.id, type, clean, now());
+  await q.run('INSERT INTO channels (user_id, type, address, verified, created_at) VALUES (?,?,?,1,?) ON CONFLICT (user_id, type, address) DO NOTHING', req.user.id, type, clean, now());
   res.json({ ok: true });
 });
-api.delete('/channels/:id', (req, res) => {
-  q.run('DELETE FROM channels WHERE user_id = ? AND id = ?', req.user.id, Number(req.params.id));
+api.delete('/channels/:id', async (req, res) => {
+  await q.run('DELETE FROM channels WHERE user_id = ? AND id = ?', req.user.id, Number(req.params.id));
   res.json({ ok: true });
 });
 
 // ---------- web push ----------
-api.get('/push/vapid', (_req, res) => res.json({ publicKey: vapidKeys().publicKey }));
-api.post('/push/subscribe', (req, res) => {
+api.get('/push/vapid', async (_req, res) => res.json({ publicKey: (await vapidKeys()).publicKey }));
+api.post('/push/subscribe', async (req, res) => {
   const sub = req.body?.subscription;
   if (!sub?.endpoint) return res.status(400).json({ error: 'subscription required' });
-  q.run('INSERT INTO push_subscriptions (user_id, endpoint, subscription_json, created_at) VALUES (?,?,?,?) ON CONFLICT(endpoint) DO UPDATE SET user_id = excluded.user_id, subscription_json = excluded.subscription_json',
+  await q.run('INSERT INTO push_subscriptions (user_id, endpoint, subscription_json, created_at) VALUES (?,?,?,?) ON CONFLICT(endpoint) DO UPDATE SET user_id = excluded.user_id, subscription_json = excluded.subscription_json',
     req.user.id, sub.endpoint, JSON.stringify(sub), now());
   res.json({ ok: true });
 });
-api.post('/push/unsubscribe', (req, res) => {
-  if (req.body?.endpoint) q.run('DELETE FROM push_subscriptions WHERE user_id = ? AND endpoint = ?', req.user.id, req.body.endpoint);
+api.post('/push/unsubscribe', async (req, res) => {
+  if (req.body?.endpoint) await q.run('DELETE FROM push_subscriptions WHERE user_id = ? AND endpoint = ?', req.user.id, req.body.endpoint);
   res.json({ ok: true });
 });
 
 // ---------- outbox / deliveries ----------
-api.get('/deliveries', (req, res) => {
-  const rows = q.all(`SELECT d.*, n.category, n.url FROM deliveries d LEFT JOIN notifications n ON n.id = d.notification_id WHERE d.user_id = ? ORDER BY d.created_at DESC LIMIT 200`, req.user.id);
+api.get('/deliveries', async (req, res) => {
+  const rows = await q.all(`SELECT d.*, n.category, n.url FROM deliveries d LEFT JOIN notifications n ON n.id = d.notification_id WHERE d.user_id = ? ORDER BY d.created_at DESC LIMIT 200`, req.user.id);
   res.json(rows);
 });
 api.post('/deliveries/digest-now', async (req, res) => {
@@ -160,22 +160,22 @@ api.post('/deliveries/digest-now', async (req, res) => {
 });
 
 // ---------- stats ----------
-api.get('/stats', (req, res) => {
+api.get('/stats', async (req, res) => {
   const t = now();
-  const unread = q.get<{ n: number }>('SELECT COUNT(*) n FROM notifications WHERE user_id = ? AND is_read = 0', req.user.id)!.n;
-  const gradesWeek = q.get<{ n: number }>(`SELECT COUNT(*) n FROM notifications WHERE user_id = ? AND category IN ('grade_posted','grade_changed') AND created_at > ?`, req.user.id, t - 7 * 86400000)!.n;
-  const rows = q.all<{ data_json: string }>(`SELECT data_json FROM snapshot WHERE user_id = ? AND kind = 'assignment'`, req.user.id).map(r => JSON.parse(r.data_json) as CanvasAssignment);
+  const unread = (await q.get<{ n: number }>('SELECT COUNT(*) n FROM notifications WHERE user_id = ? AND is_read = 0', req.user.id))!.n;
+  const gradesWeek = (await q.get<{ n: number }>(`SELECT COUNT(*) n FROM notifications WHERE user_id = ? AND category IN ('grade_posted','grade_changed') AND created_at > ?`, req.user.id, t - 7 * 86400000))!.n;
+  const rows = (await q.all<{ data_json: string }>(`SELECT data_json FROM snapshot WHERE user_id = ? AND kind = 'assignment'`, req.user.id)).map(r => JSON.parse(r.data_json) as CanvasAssignment);
   const outstanding = rows.filter(a => a.submission.workflow_state === 'unsubmitted' && !a.submission.excused && a.submission.score == null && a.due_at);
   const dueWeek = outstanding.filter(a => { const d = new Date(a.due_at!).getTime(); return d > t && d < t + 7 * 86400000; }).length;
   const missing = outstanding.filter(a => new Date(a.due_at!).getTime() < t && t - new Date(a.due_at!).getTime() < 14 * 86400000).length;
-  const inbox = q.get<{ n: number }>(`SELECT COUNT(*) n FROM notifications WHERE user_id = ? AND category = 'conversation_message' AND is_read = 0`, req.user.id)!.n;
+  const inbox = (await q.get<{ n: number }>(`SELECT COUNT(*) n FROM notifications WHERE user_id = ? AND category = 'conversation_message' AND is_read = 0`, req.user.id))!.n;
   res.json({ unread, gradesWeek, dueWeek, missing, inbox });
 });
 
 // ---------- sync + demo controls ----------
 api.post('/sync', async (req, res) => {
   const r = await syncUser(req.user.id);
-  const fresh = readSession(req.cookies?.[SESSION_COOKIE])!;
+  const fresh = (await readSession(req.cookies?.[SESSION_COOKIE]))!;
   if (fresh.last_sync_error) return res.status(502).json({ error: fresh.last_sync_error, ...r });
   res.json({ ok: true, ...r, user: publicUser(fresh) });
 });
@@ -202,11 +202,11 @@ api.get('/diagnostics', async (req, res) => {
 });
 api.post('/demo/simulate', async (req, res) => {
   if (req.user.auth_mode !== 'demo') return res.status(400).json({ error: 'Only available in demo mode' });
-  const msg = simulateActivity(`u${req.user.id}`, req.body?.kind);
+  const msg = await simulateActivity(`u${req.user.id}`, req.body?.kind);
   const r = await syncUser(req.user.id);
   res.json({ ok: true, message: msg, ...r });
 });
-api.get('/demo/log', (req, res) => {
+api.get('/demo/log', async (req, res) => {
   if (req.user.auth_mode !== 'demo') return res.json([]);
-  res.json(loadWorld(`u${req.user.id}`).log);
+  res.json((await loadWorld(`u${req.user.id}`)).log);
 });

@@ -41,10 +41,10 @@ export function defaultSettings(timezone = 'UTC'): Settings {
   };
 }
 
-export function getUser(id: number): UserRow | undefined {
+export async function getUser(id: number): Promise<UserRow | undefined> {
   return q.get<UserRow>('SELECT * FROM users WHERE id = ?', id);
 }
-export function allUsers(): UserRow[] {
+export async function allUsers(): Promise<UserRow[]> {
   return q.all<UserRow>('SELECT * FROM users');
 }
 export function getSettings(user: UserRow): Settings {
@@ -56,52 +56,52 @@ export function getSettings(user: UserRow): Settings {
     return merged;
   } catch { return base; }
 }
-export function saveSettings(userId: number, s: Settings) {
-  q.run('UPDATE users SET settings_json = ? WHERE id = ?', JSON.stringify(s), userId);
+export async function saveSettings(userId: number, s: Settings) {
+  await q.run('UPDATE users SET settings_json = ? WHERE id = ?', JSON.stringify(s), userId);
 }
 export function freqFor(settings: Settings, category: Category | string, channel: Channel): Frequency {
   return settings.prefs[category]?.[channel] ?? CATEGORIES.find(c => c.id === category)?.defaults[channel] ?? 'never';
 }
 
-export function upsertUser(input: {
+export async function upsertUser(input: {
   auth_mode: UserRow['auth_mode']; canvas_base_url: string; canvas_user_id: string; name: string;
   avatar_url?: string | null; primary_email?: string | null; access_token?: string | null; refresh_token?: string | null;
   token_expires_at?: number | null; timezone?: string;
-}): UserRow {
-  const existing = q.get<UserRow>('SELECT * FROM users WHERE canvas_base_url = ? AND canvas_user_id = ?', input.canvas_base_url, input.canvas_user_id);
+}): Promise<UserRow> {
+  const existing = await q.get<UserRow>('SELECT * FROM users WHERE canvas_base_url = ? AND canvas_user_id = ?', input.canvas_base_url, input.canvas_user_id);
   if (existing) {
-    q.run(`UPDATE users SET name = ?, avatar_url = ?, primary_email = ?, access_token = COALESCE(?, access_token),
+    await q.run(`UPDATE users SET name = ?, avatar_url = ?, primary_email = ?, access_token = COALESCE(?, access_token),
            refresh_token = COALESCE(?, refresh_token), token_expires_at = COALESCE(?, token_expires_at), auth_mode = ? WHERE id = ?`,
       input.name, input.avatar_url ?? null, input.primary_email ?? null, input.access_token ?? null,
       input.refresh_token ?? null, input.token_expires_at ?? null, input.auth_mode, existing.id);
-    return getUser(existing.id)!;
+    return (await getUser(existing.id))!;
   }
   const settings = defaultSettings(input.timezone ?? 'UTC');
-  const r = q.run(`INSERT INTO users (auth_mode, canvas_base_url, canvas_user_id, name, avatar_url, primary_email, access_token,
+  const r = await q.run(`INSERT INTO users (auth_mode, canvas_base_url, canvas_user_id, name, avatar_url, primary_email, access_token,
                    refresh_token, token_expires_at, settings_json, created_at) VALUES (?,?,?,?,?,?,?,?,?,?,?)`,
     input.auth_mode, input.canvas_base_url, input.canvas_user_id, input.name, input.avatar_url ?? null, input.primary_email ?? null,
     input.access_token ?? null, input.refresh_token ?? null, input.token_expires_at ?? null, JSON.stringify(settings), now());
-  return getUser(Number(r.lastInsertRowid))!;
+  return (await getUser(Number(r.lastInsertRowid)))!;
 }
 
 // ---------- sessions ----------
 const sign = (v: string) => createHmac('sha256', config.sessionSecret).update(v).digest('base64url');
 
-export function createSession(userId: number): string {
+export async function createSession(userId: number): Promise<string> {
   const id = randomBytes(24).toString('base64url');
-  q.run('INSERT INTO sessions (id, user_id, created_at) VALUES (?, ?, ?)', id, userId, now());
+  await q.run('INSERT INTO sessions (id, user_id, created_at) VALUES (?, ?, ?)', id, userId, now());
   return `${id}.${sign(id)}`;
 }
-export function readSession(cookie: string | undefined): UserRow | undefined {
+export async function readSession(cookie: string | undefined): Promise<UserRow | undefined> {
   if (!cookie) return undefined;
   const [id, sig] = cookie.split('.');
   if (!id || !sig || sign(id) !== sig) return undefined;
-  const s = q.get<{ user_id: number }>('SELECT user_id FROM sessions WHERE id = ?', id);
+  const s = await q.get<{ user_id: number }>('SELECT user_id FROM sessions WHERE id = ?', id);
   return s ? getUser(s.user_id) : undefined;
 }
-export function destroySession(cookie: string | undefined) {
+export async function destroySession(cookie: string | undefined) {
   const id = cookie?.split('.')[0];
-  if (id) q.run('DELETE FROM sessions WHERE id = ?', id);
+  if (id) await q.run('DELETE FROM sessions WHERE id = ?', id);
 }
 
 // ---------- time helpers ----------

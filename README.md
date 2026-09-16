@@ -31,7 +31,7 @@ Canvas REST API ──► sync engine (every 5 min) ──► diff vs snapshot �
 - `server/src/notify/deliver.ts`: turns notifications into deliveries per channel, honoring preferences, quiet hours, and digests. Without SMTP or Twilio configured, email and SMS are recorded as *simulated* and shown in the Outbox page.
 - `client/`: React + Vite + Tailwind app. Pages: Feed, Upcoming (with reminders), Courses (grades, mute), Outbox, Settings.
 
-Data lives in `data/dispatch.sqlite` using Node's built-in `node:sqlite`.
+Data lives in `data/dispatch.sqlite` (Node's built-in `node:sqlite`) by default, or in Postgres if `DATABASE_URL` is set — see Deploying below.
 
 ## Run it
 
@@ -62,27 +62,40 @@ Copy `.env.example` to `.env`:
 
 ## Deploying
 
-Dispatch is a long-running server: it polls Canvas on a timer, evaluates reminders every minute, and keeps state in a SQLite file. That needs a host that runs a persistent Node process, not a serverless one — **Vercel does not fit** (see note below). Render's free tier does, and one service hosts both the API and the built frontend.
+Dispatch is a long-running server: it polls Canvas on a timer, evaluates reminders every minute, and keeps state in a SQLite file. That needs a host that runs a persistent Node process, not a serverless one — **Vercel does not fit** (see note below). Render's free tier does, and one service hosts both the API and the built frontend. (Checked September 2026: Fly.io and Railway no longer have a real no-card free tier — both require a credit card after a short trial — and Northflank's always-on free Sandbox also requires a card and explicitly disclaims production use. Render remains the only genuinely free, no-card option that fits this app's architecture.)
 
-**Deploy to Render (free):**
+**Deploy to Render (free) — one click via Blueprint:**
 
 1. Push this repo to GitHub (already done if you're reading this from there).
-2. On [render.com](https://render.com), **New → Web Service**, connect the repo.
-3. Build Command: `npm install && npm run build`
-   Start Command: `npm start`
-   Instance Type: Free
-4. Environment variables:
-   - `SESSION_SECRET` — any long random string
-   - `SERVER_URL` and `APP_URL` — the `https://your-app.onrender.com` URL Render assigns (set these on a second deploy once you know the URL)
-   - Optionally `SMTP_*` / `TWILIO_*` for real email/SMS (see below)
-5. Deploy. First build takes a few minutes.
+2. On [render.com](https://render.com), **New → Blueprint**, connect the repo. Render reads [`render.yaml`](render.yaml) and provisions the web service on the free plan automatically (build/start commands, `SESSION_SECRET` auto-generated, `APP_URL`/`SERVER_URL` self-detected from Render's injected URL — no second deploy needed).
+3. Deploy. First build takes a few minutes.
+4. Optionally, in the service's Environment tab, fill in `SMTP_*` and/or `TWILIO_*` to turn on real email/text (see below) — they're pre-declared in the Blueprint as blank/secret so Render prompts for them without committing anything to the repo.
 
-Two tradeoffs on the free tier: the service sleeps after 15 minutes idle (next request takes 30–50s to wake it), and there's no persistent disk, so the SQLite file — settings, notification history, and your Canvas connection — resets on every redeploy or restart. For real persistence, Fly.io's free allowance includes a small persistent volume but requires a card on file (no charge within the free quota).
+(No `render.yaml`, or prefer the dashboard? **New → Web Service**, connect the repo, Build Command `npm install && npm run build`, Start Command `npm start`, Instance Type Free — same result, more manual steps.)
+
+**Two tradeoffs on the free tier, and how to work around the first one:**
+
+- **Sleep.** The service spins down after 15 minutes with no traffic; the next request takes 30–60s to wake it. Workaround: a free external uptime pinger (e.g. [UptimeRobot](https://uptimerobot.com), cron-job.org) hitting the app's URL every ~10 minutes keeps it awake, since *any* HTTP request resets the idle timer — just don't ping `/robots.txt`, Render answers that one itself without waking the service. Render's free plan includes 750 instance-hours/workspace/month, and a full month is ~730 hours, so one service pinged 24/7 just fits.
+- **No persistent disk.** The filesystem is ephemeral — every spin-down/wake cycle *and* every redeploy wipes the SQLite file (settings, notification history, your Canvas connection, all of it). A keep-alive ping avoids the routine sleep-triggered wipes, but not the ones from a redeploy or a Render-side restart. The real fix — and what this repo is set up for — is a hosted Postgres database instead of the local SQLite file.
+
+**Real persistence: Supabase Postgres (free, no card required as of Sept 2026):**
+
+Dispatch's storage layer (`server/src/db.ts`) auto-switches backends based on one env var:
+- `DATABASE_URL` unset → local SQLite file (`data/dispatch.sqlite`). Zero setup, great for local dev, ephemeral in prod.
+- `DATABASE_URL` set to a Postgres connection string → uses that instead, with the same schema. State survives redeploys and restarts.
+
+To wire it up:
+1. Create a free project at [supabase.com](https://supabase.com) (sign in with GitHub).
+2. In the new project: **Project Settings → Database → Connection string → URI**. Copy it (it looks like `postgresql://postgres:[password]@db.[ref].supabase.co:5432/postgres`).
+3. Add it as `DATABASE_URL` in Render's Environment tab (already pre-declared in `render.yaml` as a secret, so it'll prompt for it) — or in your local `.env` for testing.
+4. Redeploy (or restart locally). On first boot Dispatch creates its tables automatically (`CREATE TABLE IF NOT EXISTS ...`) — no separate migration step.
+
+This doesn't remove the *sleep* tradeoff (still worth the keep-alive ping above), but it does mean a sleep/wake cycle, a redeploy, or a Render restart no longer erases notification history, settings, or Canvas connections.
 
 **Vercel note.** Vercel runs serverless functions: no background process between requests, free-tier cron limited to once a day, and no writable disk shared across requests. Dispatch's 5-minute sync, 1-minute reminder checks, and SQLite file all depend on exactly what serverless doesn't provide. Making it fit would mean moving sync/reminders to Vercel Cron (per-minute schedules need the paid Pro plan) and replacing SQLite with a hosted database like Turso or Postgres — a real rewrite, not a deploy setting. Vercel remains a good fit if you only want to host the static `client/dist` build with the API elsewhere, though that split needs CORS and cross-site cookie support added to the server first.
 
 ## Prototype limits
 
-- Tokens are stored unencrypted in the SQLite file. Encrypt at rest before deploying.
+- Tokens are stored unencrypted (SQLite file or Postgres row, whichever backend is active). Encrypt at rest before pointing this at a real institution's users.
 - Sync polls Canvas; Canvas Live Events (Caliper/webhooks) would cut latency for institutions that enable them.
 - Email and SMS channel addresses are not verified with a confirmation code yet.

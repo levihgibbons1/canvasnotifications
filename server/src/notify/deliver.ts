@@ -18,17 +18,17 @@ export interface NotificationRow {
 }
 
 // ---------- VAPID (web push) ----------
-export function vapidKeys(): { publicKey: string; privateKey: string } {
-  let pub = kv.get('vapid_public'), priv = kv.get('vapid_private');
+export async function vapidKeys(): Promise<{ publicKey: string; privateKey: string }> {
+  let pub = await kv.get('vapid_public'), priv = await kv.get('vapid_private');
   if (!pub || !priv) {
     const k = webpush.generateVAPIDKeys();
     pub = k.publicKey; priv = k.privateKey;
-    kv.set('vapid_public', pub); kv.set('vapid_private', priv);
+    await kv.set('vapid_public', pub); await kv.set('vapid_private', priv);
   }
   return { publicKey: pub, privateKey: priv };
 }
 {
-  const k = vapidKeys();
+  const k = await vapidKeys();
   webpush.setVapidDetails('mailto:dispatch@example.com', k.publicKey, k.privateKey);
 }
 
@@ -40,22 +40,22 @@ export interface NotificationInput {
   silent?: boolean;
 }
 
-export function createNotification(user: UserRow, input: NotificationInput): NotificationRow | undefined {
-  const exists = q.get('SELECT id FROM notifications WHERE user_id = ? AND dedupe_key = ?', user.id, input.dedupe_key);
+export async function createNotification(user: UserRow, input: NotificationInput): Promise<NotificationRow | undefined> {
+  const exists = await q.get('SELECT id FROM notifications WHERE user_id = ? AND dedupe_key = ?', user.id, input.dedupe_key);
   if (exists) return undefined;
-  const r = q.run(`INSERT INTO notifications (user_id, category, title, body, course_id, course_name, url, meta_json, dedupe_key, is_read, created_at)
+  const r = await q.run(`INSERT INTO notifications (user_id, category, title, body, course_id, course_name, url, meta_json, dedupe_key, is_read, created_at)
                    VALUES (?,?,?,?,?,?,?,?,?,0,?)`,
     user.id, input.category, input.title, input.body ?? '', input.course_id ?? null, input.course_name ?? null,
     input.url ?? null, JSON.stringify(input.meta ?? {}), input.dedupe_key, input.created_at ?? now());
-  const notif = q.get<NotificationRow>('SELECT * FROM notifications WHERE id = ?', Number(r.lastInsertRowid))!;
+  const notif = (await q.get<NotificationRow>('SELECT * FROM notifications WHERE id = ?', Number(r.lastInsertRowid)))!;
   if (!input.silent) void enqueueDeliveries(user, notif);
   return notif;
 }
 
 // ---------- queuing ----------
-function addresses(user: UserRow, channel: Channel): string[] {
-  if (channel === 'push') return q.all<{ endpoint: string }>('SELECT endpoint FROM push_subscriptions WHERE user_id = ?', user.id).map(r => r.endpoint);
-  const rows = q.all<{ address: string }>('SELECT address FROM channels WHERE user_id = ? AND type = ? AND verified = 1', user.id, channel);
+async function addresses(user: UserRow, channel: Channel): Promise<string[]> {
+  if (channel === 'push') return (await q.all<{ endpoint: string }>('SELECT endpoint FROM push_subscriptions WHERE user_id = ?', user.id)).map(r => r.endpoint);
+  const rows = await q.all<{ address: string }>('SELECT address FROM channels WHERE user_id = ? AND type = ? AND verified = 1', user.id, channel);
   return rows.map(r => r.address);
 }
 
@@ -64,17 +64,17 @@ export async function enqueueDeliveries(user: UserRow, notif: NotificationRow) {
   for (const channel of ['push', 'email', 'sms'] as Channel[]) {
     const freq = freqFor(settings, notif.category, channel);
     if (freq === 'never') continue;
-    const addrs = addresses(user, channel);
+    const addrs = await addresses(user, channel);
     if (!addrs.length) continue;
     const { subject, body } = render(channel, notif);
     for (const address of addrs) {
       if (freq === 'daily') {
-        q.run(`INSERT INTO deliveries (user_id, notification_id, channel, address, status, subject, body, created_at) VALUES (?,?,?,?,'digest',?,?,?)`,
+        await q.run(`INSERT INTO deliveries (user_id, notification_id, channel, address, status, subject, body, created_at) VALUES (?,?,?,?,'digest',?,?,?)`,
           user.id, notif.id, channel, address, subject, body, now());
         continue;
       }
       const sendAfter = isQuietNow(settings) ? quietHoursEnd(settings) : null;
-      const r = q.run(`INSERT INTO deliveries (user_id, notification_id, channel, address, status, subject, body, send_after, created_at) VALUES (?,?,?,?,'queued',?,?,?,?)`,
+      const r = await q.run(`INSERT INTO deliveries (user_id, notification_id, channel, address, status, subject, body, send_after, created_at) VALUES (?,?,?,?,'queued',?,?,?,?)`,
         user.id, notif.id, channel, address, subject, body, sendAfter, now());
       if (!sendAfter) await sendDelivery(Number(r.lastInsertRowid));
     }
@@ -103,29 +103,29 @@ export const stripHtml = (s: string) => (s ?? '').replace(/<[^>]+>/g, ' ').repla
 interface DeliveryRow { id: number; user_id: number; notification_id: number | null; channel: Channel; address: string; status: string; subject: string; body: string; }
 
 export async function sendDelivery(id: number) {
-  const d = q.get<DeliveryRow>('SELECT * FROM deliveries WHERE id = ?', id);
+  const d = await q.get<DeliveryRow>('SELECT * FROM deliveries WHERE id = ?', id);
   if (!d || (d.status !== 'queued' && d.status !== 'digest')) return;
-  const notif = d.notification_id ? q.get<NotificationRow>('SELECT * FROM notifications WHERE id = ?', d.notification_id) : undefined;
+  const notif = d.notification_id ? await q.get<NotificationRow>('SELECT * FROM notifications WHERE id = ?', d.notification_id) : undefined;
   try {
     let status: 'sent' | 'simulated' = 'simulated';
     if (d.channel === 'push') status = await sendPush(d, notif);
     else if (d.channel === 'email') status = await sendEmail(d);
     else if (d.channel === 'sms') status = await sendSms(d);
-    q.run('UPDATE deliveries SET status = ?, sent_at = ?, error = NULL WHERE id = ?', status, now(), id);
+    await q.run('UPDATE deliveries SET status = ?, sent_at = ?, error = NULL WHERE id = ?', status, now(), id);
   } catch (e: any) {
-    q.run('UPDATE deliveries SET status = ?, error = ? WHERE id = ?', 'failed', String(e?.message ?? e).slice(0, 300), id);
+    await q.run('UPDATE deliveries SET status = ?, error = ? WHERE id = ?', 'failed', String(e?.message ?? e).slice(0, 300), id);
   }
 }
 
 async function sendPush(d: DeliveryRow, notif?: NotificationRow): Promise<'sent' | 'simulated'> {
-  const sub = q.get<{ subscription_json: string }>('SELECT subscription_json FROM push_subscriptions WHERE endpoint = ?', d.address);
+  const sub = await q.get<{ subscription_json: string }>('SELECT subscription_json FROM push_subscriptions WHERE endpoint = ?', d.address);
   if (!sub) throw new Error('push subscription no longer exists');
   const payload = JSON.stringify({ title: d.subject, body: d.body, url: notif?.url ?? config.appUrl, tag: notif ? `n-${notif.id}` : `d-${d.id}`, category: notif?.category });
   try {
     await webpush.sendNotification(JSON.parse(sub.subscription_json), payload, { TTL: 3600 });
     return 'sent';
   } catch (e: any) {
-    if (e?.statusCode === 404 || e?.statusCode === 410) q.run('DELETE FROM push_subscriptions WHERE endpoint = ?', d.address);
+    if (e?.statusCode === 404 || e?.statusCode === 410) await q.run('DELETE FROM push_subscriptions WHERE endpoint = ?', d.address);
     throw e;
   }
 }
@@ -152,48 +152,48 @@ async function sendSms(d: DeliveryRow): Promise<'sent' | 'simulated'> {
 // ---------- background processing ----------
 /** Sends deliveries whose quiet-hours hold has expired. */
 export async function processQueue() {
-  const due = q.all<{ id: number }>('SELECT id FROM deliveries WHERE status = ? AND (send_after IS NULL OR send_after <= ?)', 'queued', now());
+  const due = await q.all<{ id: number }>('SELECT id FROM deliveries WHERE status = ? AND (send_after IS NULL OR send_after <= ?)', 'queued', now());
   for (const r of due) await sendDelivery(r.id);
 }
 
 /** Builds and sends one digest per channel at the user's chosen local time. */
 export async function processDigests() {
-  for (const user of q.all<UserRow>('SELECT * FROM users')) {
+  for (const user of await q.all<UserRow>('SELECT * FROM users')) {
     const settings = getSettings(user);
     const { hh, mm, ymd } = localParts(now(), settings.timezone);
     const [dh, dm] = settings.digestTime.split(':').map(Number);
     if (hh * 60 + mm < dh * 60 + dm) continue;
     for (const channel of ['push', 'email', 'sms'] as Channel[]) {
       const k = `digest:${user.id}:${channel}:${ymd}`;
-      if (kv.get(k)) continue;
-      kv.set(k, '1');
+      if (await kv.get(k)) continue;
+      await kv.set(k, '1');
       await sendDigest(user, settings, channel, ymd);
     }
   }
 }
 
 export async function sendDigest(user: UserRow, settings: Settings, channel: Channel, ymd: string, force = false) {
-  const pending = q.all<DeliveryRow & { category: string; title: string; course_name: string | null }>(
+  const pending = await q.all<DeliveryRow & { category: string; title: string; course_name: string | null }>(
     `SELECT d.*, n.category, n.title, n.course_name FROM deliveries d LEFT JOIN notifications n ON n.id = d.notification_id
      WHERE d.user_id = ? AND d.channel = ? AND d.status = 'digest' ORDER BY d.created_at`, user.id, channel);
   const wantsDigest = freqFor(settings, 'digest', channel) !== 'never';
   if (!pending.length && !wantsDigest && !force) return;
-  const addrs = addresses(user, channel);
+  const addrs = await addresses(user, channel);
   if (!addrs.length) return;
 
-  const upcoming = q.all<{ data_json: string }>(`SELECT data_json FROM snapshot WHERE user_id = ? AND kind = 'assignment'`, user.id)
+  const upcoming = (await q.all<{ data_json: string }>(`SELECT data_json FROM snapshot WHERE user_id = ? AND kind = 'assignment'`, user.id))
     .map(r => JSON.parse(r.data_json))
     .filter(a => a.due_at && a.submission?.workflow_state === 'unsubmitted' && !a.submission?.excused)
     .map(a => ({ ...a, dueMs: new Date(a.due_at).getTime() }))
     .filter(a => a.dueMs > now() && a.dueMs < now() + 48 * 3_600_000)
     .sort((a, b) => a.dueMs - b.dueMs);
-  const courseName = (id: string) => q.get<{ name: string }>('SELECT name FROM courses WHERE user_id = ? AND canvas_id = ?', user.id, id)?.name ?? '';
+  const courseName = async (id: string) => (await q.get<{ name: string }>('SELECT name FROM courses WHERE user_id = ? AND canvas_id = ?', user.id, id))?.name ?? '';
 
   const lines: string[] = [];
   lines.push(`Your Dispatch digest for ${ymd}`);
   lines.push('');
   lines.push(upcoming.length ? `DUE IN THE NEXT 48 HOURS (${upcoming.length})` : 'Nothing due in the next 48 hours.');
-  for (const a of upcoming) lines.push(`  • ${a.name} — ${courseName(a.course_id)} — due ${new Date(a.dueMs).toLocaleString('en-US', { timeZone: settings.timezone, weekday: 'short', hour: 'numeric', minute: '2-digit' })}`);
+  for (const a of upcoming) lines.push(`  • ${a.name} — ${await courseName(a.course_id)} — due ${new Date(a.dueMs).toLocaleString('en-US', { timeZone: settings.timezone, weekday: 'short', hour: 'numeric', minute: '2-digit' })}`);
   if (pending.length) {
     lines.push('');
     lines.push(`SINCE YOUR LAST DIGEST (${pending.length})`);
@@ -209,15 +209,15 @@ export async function sendDigest(user: UserRow, settings: Settings, channel: Cha
   const subject = `Dispatch digest: ${upcoming.length} due soon, ${pending.length} update${pending.length === 1 ? '' : 's'}`;
   const body = channel === 'sms' ? lines.join('\n').slice(0, 600) : lines.join('\n');
 
-  const digestNotif = createNotification(user, {
+  const digestNotif = await createNotification(user, {
     category: 'digest', title: subject, body: lines.slice(2).join('\n'), dedupe_key: `digest:${channel}:${ymd}:${force ? now() : ''}`, silent: true,
   });
   for (const address of addrs) {
-    const r = q.run(`INSERT INTO deliveries (user_id, notification_id, channel, address, status, subject, body, created_at) VALUES (?,?,?,?,'queued',?,?,?)`,
+    const r = await q.run(`INSERT INTO deliveries (user_id, notification_id, channel, address, status, subject, body, created_at) VALUES (?,?,?,?,'queued',?,?,?)`,
       user.id, digestNotif?.id ?? null, channel, address, subject, body, now());
     await sendDelivery(Number(r.lastInsertRowid));
   }
-  if (pending.length) q.run(`UPDATE deliveries SET status = 'digested', sent_at = ? WHERE id IN (${pending.map(p => p.id).join(',')})`, now());
+  if (pending.length) await q.run(`UPDATE deliveries SET status = 'digested', sent_at = ? WHERE id IN (${pending.map(p => p.id).join(',')})`, now());
 }
 
-export function userById(id: number) { return getUser(id); }
+export async function userById(id: number) { return getUser(id); }
