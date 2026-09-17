@@ -6,6 +6,9 @@ const esc = (s: string) => s.replace(/[&<>"']/g, c => ESCAPE[c]);
 export function renderEmailHtml(opts: {
   eyebrow?: string;
   title: string;
+  /** A short, prominent stat shown as its own block below the title (e.g. a score) — kept
+   *  visually separate from the title so a long assignment name and a grade never blur together. */
+  stat?: string;
   body: string;
   ctaUrl?: string;
   ctaLabel?: string;
@@ -14,8 +17,11 @@ export function renderEmailHtml(opts: {
     const bullet = line.startsWith('•');
     return `<p style="margin:0 0 8px;padding-left:${bullet ? '14px' : '0'};color:#4a463b;font-size:14px;line-height:1.6;">${esc(line)}</p>`;
   }).join('');
+  const stat = opts.stat
+    ? `<div style="display:inline-block;margin:2px 0 16px;padding:10px 16px;background:#f5efe4;border:1px solid #d8cfbc;border-radius:10px;font-family:Georgia,'Iowan Old Style',serif;font-size:20px;font-weight:700;color:#16150f;">${esc(opts.stat)}</div>`
+    : '';
   const cta = opts.ctaUrl
-    ? `<a href="${esc(opts.ctaUrl)}" style="display:inline-block;margin-top:16px;padding:10px 18px;background:#16150f;color:#f5efe4;text-decoration:none;border-radius:8px;font-size:13px;font-weight:600;">${esc(opts.ctaLabel ?? 'Open')} &rarr;</a>`
+    ? `<a href="${esc(opts.ctaUrl)}" style="display:inline-block;margin-top:4px;padding:10px 18px;background:#16150f;color:#f5efe4;text-decoration:none;border-radius:8px;font-size:13px;font-weight:600;">${esc(opts.ctaLabel ?? 'Open')} &rarr;</a>`
     : '';
   return `<!doctype html>
 <html>
@@ -28,7 +34,8 @@ export function renderEmailHtml(opts: {
         <span style="font-family:ui-monospace,'JetBrains Mono',monospace;font-size:10px;letter-spacing:0.12em;text-transform:uppercase;color:#8a8474;margin-left:8px;">for Canvas</span>
       </div>
       ${opts.eyebrow ? `<div style="font-family:ui-monospace,monospace;font-size:11px;letter-spacing:0.12em;text-transform:uppercase;color:#e4572e;font-weight:600;margin-bottom:6px;">${esc(opts.eyebrow)}</div>` : ''}
-      <h1 style="margin:0 0 14px;font-family:Georgia,'Iowan Old Style',serif;font-size:20px;line-height:1.3;color:#16150f;font-weight:600;">${esc(opts.title)}</h1>
+      <h1 style="margin:0 0 12px;font-family:Georgia,'Iowan Old Style',serif;font-size:19px;line-height:1.3;color:#16150f;font-weight:600;">${esc(opts.title)}</h1>
+      ${stat}
       ${paragraphs}
       ${cta}
     </div>

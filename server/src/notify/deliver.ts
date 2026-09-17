@@ -83,13 +83,21 @@ export async function enqueueDeliveries(user: UserRow, notif: NotificationRow) {
 }
 
 // ---------- rendering ----------
+/**
+ * Grade titles are built as "<assignment name>: <score stuff>" (e.g. "Reading response:
+ * Fiscal policy: 9 / 10 (90%)" or, for a regrade, "...: 17 → 17/20 (85%)"). Splits at the
+ * *last* ": " so an assignment name that itself contains ": " (e.g. "Essay: Draft 1")
+ * survives — the score portion never contains ": " itself.
+ */
+function splitGradeTitle(title: string): { name: string; stat: string } {
+  const cut = title.lastIndexOf(': ');
+  return cut > -1 ? { name: title.slice(0, cut), stat: title.slice(cut + 2) } : { name: title, stat: '' };
+}
+
 /** Short, score-free phrase for the email subject line — the score still shows in the body. */
 function emailSubjectPhrase(n: NotificationRow): string {
   if (n.category === 'grade_posted' || n.category === 'grade_changed') {
-    // Both titles are built as "<assignment name>: <score stuff>" — cut at the *last*
-    // ": " so an assignment name that itself contains ": " (e.g. "Essay: Draft 1") survives.
-    const cut = n.title.lastIndexOf(': ');
-    const name = cut > -1 ? n.title.slice(0, cut) : n.title;
+    const { name } = splitGradeTitle(n.title);
     return `${name} ${n.category === 'grade_posted' ? 'graded' : 'regraded'}`;
   }
   return n.title;
@@ -151,10 +159,17 @@ function parseFrom(raw: string): { name?: string; email: string } {
 
 let transporter: Transporter | null = null;
 async function sendEmail(d: DeliveryRow, notif?: NotificationRow): Promise<'sent' | 'simulated'> {
+  const isGrade = notif?.category === 'grade_posted' || notif?.category === 'grade_changed';
+  const { name: gradeTitle, stat: gradeStat } = isGrade ? splitGradeTitle(notif!.title) : { name: '', stat: '' };
   const html = renderEmailHtml({
-    eyebrow: notif ? (CATEGORY_LABEL[notif.category] ?? notif.category) : undefined,
-    title: notif?.title ?? d.subject,
-    body: notif ? stripHtml(notif.body) : d.body,
+    eyebrow: notif
+      ? [CATEGORY_LABEL[notif.category] ?? notif.category, notif.course_name].filter(Boolean).join(' · ')
+      : undefined,
+    title: isGrade ? gradeTitle : (notif?.title ?? d.subject),
+    stat: isGrade ? gradeStat : undefined,
+    // The generic "Grade posted in <course>." sentence is redundant once the course is in
+    // the eyebrow, and the score already gets its own block — nothing left worth a paragraph.
+    body: isGrade ? '' : notif ? stripHtml(notif.body) : d.body,
     ctaUrl: notif?.url || config.appUrl,
     ctaLabel: notif?.url ? 'Open in Canvas' : 'Open Dispatch',
   });
