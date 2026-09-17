@@ -172,6 +172,7 @@ async function sendEmail(d: DeliveryRow, notif?: NotificationRow): Promise<'sent
     body: isGrade ? '' : notif ? stripHtml(notif.body) : d.body,
     ctaUrl: notif?.url || config.appUrl,
     ctaLabel: notif?.url ? 'Open in Canvas' : 'Open Dispatch',
+    settingsUrl: `${config.appUrl}/settings`,
   });
   // Prefer Brevo's HTTP API: it works on hosts that block outbound SMTP ports
   // (e.g. Render's free tier). Nodemailer/SMTP stays as a fallback for hosts that don't.

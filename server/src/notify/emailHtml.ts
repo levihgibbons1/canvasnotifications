@@ -12,16 +12,24 @@ export function renderEmailHtml(opts: {
   body: string;
   ctaUrl?: string;
   ctaLabel?: string;
+  /** Link to the app's notification-preferences page, shown as a small footer link. */
+  settingsUrl?: string;
 }): string {
   const paragraphs = opts.body.split('\n').map(l => l.trim()).filter(Boolean).map(line => {
     const bullet = line.startsWith('•');
     return `<p style="margin:0 0 8px;padding-left:${bullet ? '14px' : '0'};color:#4a463b;font-size:14px;line-height:1.6;">${esc(line)}</p>`;
   }).join('');
+  // Each block-level div occupies its own line, so the stat badge and the CTA button always
+  // stack — the inline-block *inside* each div is just what keeps them shrink-to-fit chips
+  // instead of stretching edge to edge.
   const stat = opts.stat
-    ? `<div style="display:inline-block;margin:2px 0 16px;padding:10px 16px;background:#f5efe4;border:1px solid #d8cfbc;border-radius:10px;font-family:Georgia,'Iowan Old Style',serif;font-size:20px;font-weight:700;color:#16150f;">${esc(opts.stat)}</div>`
+    ? `<div style="margin:2px 0 14px;"><div style="display:inline-block;padding:10px 16px;background:#f5efe4;border:1px solid #d8cfbc;border-radius:10px;font-family:Georgia,'Iowan Old Style',serif;font-size:20px;font-weight:700;color:#16150f;">${esc(opts.stat)}</div></div>`
     : '';
   const cta = opts.ctaUrl
-    ? `<a href="${esc(opts.ctaUrl)}" style="display:inline-block;margin-top:4px;padding:10px 18px;background:#16150f;color:#f5efe4;text-decoration:none;border-radius:8px;font-size:13px;font-weight:600;">${esc(opts.ctaLabel ?? 'Open')} &rarr;</a>`
+    ? `<div style="margin-top:6px;"><a href="${esc(opts.ctaUrl)}" style="display:inline-block;padding:10px 18px;background:#16150f;color:#f5efe4;text-decoration:none;border-radius:8px;font-size:13px;font-weight:600;">${esc(opts.ctaLabel ?? 'Open')} &rarr;</a></div>`
+    : '';
+  const settings = opts.settingsUrl
+    ? `<p style="max-width:480px;margin:8px auto 0;text-align:center;"><a href="${esc(opts.settingsUrl)}" style="font-family:ui-monospace,monospace;font-size:10px;letter-spacing:0.08em;text-transform:uppercase;color:#e4572e;text-decoration:underline;">Adjust notification settings</a></p>`
     : '';
   return `<!doctype html>
 <html>
@@ -40,6 +48,7 @@ export function renderEmailHtml(opts: {
       ${cta}
     </div>
     <p style="max-width:480px;margin:16px auto 0;padding:0 4px;font-family:ui-monospace,monospace;font-size:10px;letter-spacing:0.08em;text-transform:uppercase;color:#8a8474;text-align:center;">Dispatch for Canvas &middot; read-only, never posts on your behalf</p>
+    ${settings}
   </body>
 </html>`;
 }
