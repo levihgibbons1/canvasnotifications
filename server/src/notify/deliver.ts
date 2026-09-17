@@ -9,7 +9,7 @@ import nodemailer, { type Transporter } from 'nodemailer';
 import { q, kv, now } from '../db.js';
 import { config } from '../config.js';
 import { CATEGORY_LABEL, CATEGORY_EMOJI, type Channel, type Category } from './categories.js';
-import { renderEmailHtml } from './emailHtml.js';
+import { renderEmailHtml, renderDigestEmailHtml } from './emailHtml.js';
 import { getSettings, getUser, freqFor, isQuietNow, quietHoursEnd, localParts, type UserRow, type Settings } from '../users.js';
 
 export interface NotificationRow {
@@ -160,20 +160,36 @@ function parseFrom(raw: string): { name?: string; email: string } {
 let transporter: Transporter | null = null;
 async function sendEmail(d: DeliveryRow, notif?: NotificationRow): Promise<'sent' | 'simulated'> {
   const isGrade = notif?.category === 'grade_posted' || notif?.category === 'grade_changed';
+  const isDigest = notif?.category === 'digest';
   const { name: gradeTitle, stat: gradeStat } = isGrade ? splitGradeTitle(notif!.title) : { name: '', stat: '' };
-  const html = renderEmailHtml({
-    eyebrow: notif
-      ? [CATEGORY_LABEL[notif.category] ?? notif.category, notif.course_name].filter(Boolean).join(' · ')
-      : undefined,
-    title: isGrade ? gradeTitle : (notif?.title ?? d.subject),
-    stat: isGrade ? gradeStat : undefined,
-    // The generic "Grade posted in <course>." sentence is redundant once the course is in
-    // the eyebrow, and the score already gets its own block — nothing left worth a paragraph.
-    body: isGrade ? '' : notif ? stripHtml(notif.body) : d.body,
-    ctaUrl: notif?.url || config.appUrl,
-    ctaLabel: notif?.url ? 'Open in Canvas' : 'Open Dispatch',
-    settingsUrl: `${config.appUrl}/settings`,
-  });
+  // The digest's plaintext body loses its line breaks once whitespace gets collapsed for the
+  // other channels, so it gets its own structured template built straight from the notification's
+  // stashed meta rather than being squeezed through the generic paragraph renderer.
+  const digestMeta: { upcoming?: { name: string; course: string; due: string }[]; updateGroups?: { label: string; items: { course: string; title: string }[] }[] } =
+    isDigest ? JSON.parse(notif!.meta_json || '{}') : {};
+  const html = isDigest
+    ? renderDigestEmailHtml({
+        eyebrow: 'Daily digest',
+        title: notif!.title,
+        upcoming: digestMeta.upcoming ?? [],
+        updateGroups: digestMeta.updateGroups ?? [],
+        ctaUrl: config.appUrl,
+        ctaLabel: 'Open Dispatch',
+        settingsUrl: `${config.appUrl}/settings`,
+      })
+    : renderEmailHtml({
+        eyebrow: notif
+          ? [CATEGORY_LABEL[notif.category] ?? notif.category, notif.course_name].filter(Boolean).join(' · ')
+          : undefined,
+        title: isGrade ? gradeTitle : (notif?.title ?? d.subject),
+        stat: isGrade ? gradeStat : undefined,
+        // The generic "Grade posted in <course>." sentence is redundant once the course is in
+        // the eyebrow, and the score already gets its own block — nothing left worth a paragraph.
+        body: isGrade ? '' : notif ? stripHtml(notif.body) : d.body,
+        ctaUrl: notif?.url || config.appUrl,
+        ctaLabel: notif?.url ? 'Open in Canvas' : 'Open Dispatch',
+        settingsUrl: `${config.appUrl}/settings`,
+      });
   // Prefer Brevo's HTTP API: it works on hosts that block outbound SMTP ports
   // (e.g. Render's free tier). Nodemailer/SMTP stays as a fallback for hosts that don't.
   if (config.brevo.enabled) {
@@ -249,19 +265,34 @@ export async function sendDigest(user: UserRow, settings: Settings, channel: Cha
     .sort((a, b) => a.dueMs - b.dueMs);
   const courseName = async (id: string) => (await q.get<{ name: string }>('SELECT name FROM courses WHERE user_id = ? AND canvas_id = ?', user.id, id))?.name ?? '';
 
+  const upcomingMeta: { name: string; course: string; due: string }[] = [];
+  for (const a of upcoming) {
+    upcomingMeta.push({
+      name: a.name,
+      course: await courseName(a.course_id),
+      due: new Date(a.dueMs).toLocaleString('en-US', { timeZone: settings.timezone, weekday: 'short', hour: 'numeric', minute: '2-digit' }),
+    });
+  }
+  const updateGroupsMeta: { label: string; items: { course: string; title: string }[] }[] = [];
+  if (pending.length) {
+    const groups = new Map<string, typeof pending>();
+    for (const p of pending) groups.set(p.category, [...(groups.get(p.category) ?? []), p]);
+    for (const [cat, items] of groups) {
+      updateGroupsMeta.push({ label: CATEGORY_LABEL[cat as Category] ?? cat, items: items.map(it => ({ course: it.course_name ?? '', title: it.title })) });
+    }
+  }
+
   const lines: string[] = [];
   lines.push(`Your Dispatch digest for ${ymd}`);
   lines.push('');
   lines.push(upcoming.length ? `DUE IN THE NEXT 48 HOURS (${upcoming.length})` : 'Nothing due in the next 48 hours.');
-  for (const a of upcoming) lines.push(`  • ${a.name} — ${await courseName(a.course_id)} — due ${new Date(a.dueMs).toLocaleString('en-US', { timeZone: settings.timezone, weekday: 'short', hour: 'numeric', minute: '2-digit' })}`);
+  for (const a of upcomingMeta) lines.push(`  • ${a.name} — ${a.course} — due ${a.due}`);
   if (pending.length) {
     lines.push('');
     lines.push(`SINCE YOUR LAST DIGEST (${pending.length})`);
-    const groups = new Map<string, typeof pending>();
-    for (const p of pending) groups.set(p.category, [...(groups.get(p.category) ?? []), p]);
-    for (const [cat, items] of groups) {
-      lines.push(`  ${CATEGORY_LABEL[cat as Category] ?? cat}`);
-      for (const it of items) lines.push(`    • ${it.course_name ? `[${it.course_name}] ` : ''}${it.title}`);
+    for (const g of updateGroupsMeta) {
+      lines.push(`  ${g.label}`);
+      for (const it of g.items) lines.push(`    • ${it.course ? `[${it.course}] ` : ''}${it.title}`);
     }
   }
   lines.push('');
@@ -271,6 +302,7 @@ export async function sendDigest(user: UserRow, settings: Settings, channel: Cha
 
   const digestNotif = await createNotification(user, {
     category: 'digest', title: subject, body: lines.slice(2).join('\n'), dedupe_key: `digest:${channel}:${ymd}:${force ? now() : ''}`, silent: true,
+    meta: { upcoming: upcomingMeta, updateGroups: updateGroupsMeta },
   });
   for (const address of addrs) {
     const r = await q.run(`INSERT INTO deliveries (user_id, notification_id, channel, address, status, subject, body, created_at) VALUES (?,?,?,?,'queued',?,?,?)`,
